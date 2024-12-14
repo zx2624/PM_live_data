@@ -20,7 +20,7 @@ class TerminalPrinter:
         atexit.register(self.show_cursor)
 
         # 清屏
-        subprocess.run(["cls"])
+        subprocess.run(["clear"])
         # 初始化打印区域
         print("\n" * (num_threads * 3))
 
