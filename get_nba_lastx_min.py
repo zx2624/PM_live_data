@@ -1,12 +1,17 @@
-from nba_api.stats.endpoints import leaguegamefinder, playbyplayv2
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import pandas as pd
 from tqdm import tqdm  # 用于显示进度条
-from concurrent.futures import ThreadPoolExecutor
-import logging
+
+from nba_api.stats.endpoints import leaguegamefinder, playbyplayv2
+
 logger = logging.getLogger()
 logging.basicConfig(level=logging.INFO)
 
-def quater_pct_to_sec(quater, pct): 
+
+def quater_pct_to_sec(quater, pct):
     """
     Convert to seconds from the start of the game
     """
@@ -21,50 +26,57 @@ def quater_pct_to_sec(quater, pct):
     else:
         return 4 * 12 * 60 + (quater - 4) * 5 * 60 - pct_sec
 
+
 def process_one(game_id):
     try:
         # filter last quater plays, including overtime
-        play_by_play = playbyplayv2.PlayByPlayV2(game_id=game_id, timeout=5).get_data_frames()[0]
-        play_by_play = play_by_play[play_by_play['SCOREMARGIN'].notna()]
+        play_by_play = playbyplayv2.PlayByPlayV2(
+            game_id=game_id, timeout=5
+        ).get_data_frames()[0]
+        play_by_play = play_by_play[play_by_play["SCOREMARGIN"].notna()]
         last_quater = int(play_by_play["PERIOD"].max())
         # convert PCTIMESTRING to seconds from the start of the game
         play_by_play["TIMEPLAYED"] = play_by_play.apply(
             lambda x: quater_pct_to_sec(x["PERIOD"], x["PCTIMESTRING"]), axis=1
         )
         # get socre margin of every second in last 120 seconds
-        result = {
-            "GAME_ID": game_id
-        }
+        result = {"GAME_ID": game_id}
         # get Q3 ~ end of the game by seconds
         # assuming 2 OTs at most
         for i in range(2 * 12 * 60, 2880 + (last_quater - 4) * 5 * 60 + 1):
-            result[i] = play_by_play[play_by_play['TIMEPLAYED'] <= i].iloc[-1]["SCOREMARGIN"]
+            result[i] = play_by_play[play_by_play["TIMEPLAYED"] <= i].iloc[-1][
+                "SCOREMARGIN"
+            ]
             if result[i] == "TIE":
                 result[i] = 0
         return result, game_id
     except Exception as e:
         logger.info(f"Error processing game {game_id}: {e}")
         return False, game_id
-    
+
+
 try:
     with open("failed_games.txt", "r") as f:
         his_failed_games = f.read().split("\n")
-except:
+except Exception as e:
+    logger.info(f"Open file failed with {e}")
     his_failed_games = []
 
 # 获取2020赛季至今的比赛列表
-seasons = list(range(15, 24))
+years = list(range(15, 24))
 # 初始化存储结果
 new_failed_games = []
-import time
+
 time_stamp = time.time()
-for season in seasons:
-    season = f"20{season:02d}-{season+1:02d}"
+for year in years:
+    season = f"20{year:02d}-{year+1:02d}"
     results = []
     logger.info(f"Processing season {season}")
     while True:
         try:
-            gamefinder = leaguegamefinder.LeagueGameFinder(season_nullable=season, timeout=5)  # 替换为目标赛季
+            gamefinder = leaguegamefinder.LeagueGameFinder(
+                season_nullable=season, timeout=5
+            )  # 替换为目标赛季
             games = gamefinder.get_data_frames()[0]
             logger.info(f"season {season} has {len(games)} games")
             break
@@ -89,6 +101,9 @@ for season in seasons:
         else:
             new_failed_games.append(result[1])
     results = filtered_results
+    if len(results) == 0:
+        logger.info("no result succeed")
+        continue
     results_df = pd.DataFrame(results)
 
     # # 保存或输出
