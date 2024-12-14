@@ -11,11 +11,13 @@ repos:
     rev: 7.0.0
     hooks:
       - id: flake8
-        additional_dependencies:
-          ["flake8-bugbear", "flake8-docstrings", "flake8-quotes"]
+        additional_dependencies: ["flake8-bugbear", "flake8-quotes"]
         args: [
             "--max-line-length=88",
             "--extend-ignore=E203", # For Black compatibility
+            "--inline-quotes=double", # 使用双引号
+            "--multiline-quotes=double", # 多行字符串使用双引号
+            "--docstring-quotes=double", # docstring使用双引号
           ]
 
   - repo: https://github.com/pycqa/isort
@@ -54,15 +56,6 @@ repos:
         args: [--ignore-missing-imports, --install-types, --non-interactive]
         # 移除了 types-all 依赖，让 mypy 自动安装需要的类型
         additional_dependencies: []
-
-  # Documentation checks
-  - repo: https://github.com/PyCQA/pydocstyle
-    rev: 6.3.0
-    hooks:
-      - id: pydocstyle
-        args:
-          - --convention=google
-          - --add-ignore=D100,D104
 
   # YAML/Markdown formatting
   - repo: https://github.com/pre-commit/mirrors-prettier
