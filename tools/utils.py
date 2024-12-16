@@ -138,6 +138,7 @@ def buy_in(tokens, price_threshold=0.9):
     max_price = 0
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
+        logger.info(f"current price is {price}")
         if price > max_price:
             max_price = price
         if price >= price_threshold and price < 1.0:
