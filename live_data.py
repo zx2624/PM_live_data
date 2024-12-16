@@ -23,7 +23,7 @@ eastern = pytz.timezone("US/Eastern")
 game_date = datetime.now(eastern).strftime("%Y-%m-%d")
 logger.info(f"game_date now in us: {game_date}")
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # noqa
     # get team and token according to game_date
     team_token = get_team_token(game_date, "nba")
     # get games from nba_api.stats.endpoints.ScoreboardV2
@@ -36,13 +36,16 @@ if __name__ == "__main__":
             df = df[["GAME_ID", "HOME_TEAM_ID", "VISITOR_TEAM_ID"]]
             # use game_id as key, home_team_id and visitor_team_id as values
             game_ids = df["GAME_ID"].values
-            assert len(game_ids) * 2 == len(
-                team_token
-            ), f"error, team token should be double of game_ids, \
-                got {len(game_ids)} game_ids and {len(team_token)} team tokens"
+            # assert len(game_ids) * 2 == len(
+            #     team_token
+            # ), f"error, team token should be double of game_ids, \
+            #     got {len(game_ids)} game_ids and {len(team_token)} team tokens"
             for game_id in game_ids:
                 home_team_id = df[df["GAME_ID"] == game_id]["HOME_TEAM_ID"].iloc[0]
                 home_team = teams.find_team_name_by_id(home_team_id)["nickname"]
+                if home_team not in team_token:
+                    logger.info(f"{home_team} not in outcome_token_id")
+                    continue
                 visitor_team_id = df[df["GAME_ID"] == game_id]["VISITOR_TEAM_ID"].iloc[
                     0
                 ]
@@ -107,7 +110,7 @@ if __name__ == "__main__":
                     continue
                 flip_rate = check_flip(time_played, away_team_score - home_team_score)
                 info_str += f" flip rate: {flip_rate}"
-                if flip_rate < 0.005:
+                if flip_rate < 0.002:
                     logger.info(info_str)
                     logger.info(
                         f"{game_id}: {away_team} vs. {home_team} flip rate: {flip_rate}"
@@ -123,8 +126,6 @@ if __name__ == "__main__":
                 logger.info(f"score: {away_team_score} - {home_team_score}")
                 try:
                     logger.info(f"buy in finished game: {game_id}")
-                    buy_in(gameid_token[game_id])
-                    exit()
                 except Exception as e:
                     logger.info(f"buy in finished game fail: {e}")
                 finished_game_ids.append(game_id)
