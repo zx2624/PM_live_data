@@ -37,6 +37,7 @@ df = pd.concat([pd.read_csv(file) for file in csv_files])
 quater_map = {
     "Q3": 3,
     "Q4": 4,
+    "OT": 5,
     "OT1": 5,
     "OT2": 6,
     "OT3": 7,
@@ -138,7 +139,7 @@ def buy_in(tokens, price_threshold=0.9):
     max_price = 0
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
-        logger.info(f"current price is {price}")
+        logger.info(f"{token} current price is {price}")
         if price > max_price:
             max_price = price
         if price >= price_threshold and price < 1.0:
@@ -158,5 +159,5 @@ def buy_in(tokens, price_threshold=0.9):
             time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             with open("assets/buy_in.log", "a") as f:
                 f.write(f"{token} {buy_price} {size} @{time_str}\n")
-            exit()
-    return max_price
+            return True
+    return False
