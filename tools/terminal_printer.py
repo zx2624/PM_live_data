@@ -12,7 +12,7 @@ class TerminalPrinter:
         self.num_threads = num_threads
         self.print_lock = Lock()
         self.positions = {}
-
+        self.line_perthread = 6
         # 隐藏光标
         self.hide_cursor()
 
@@ -22,7 +22,7 @@ class TerminalPrinter:
         # 清屏
         subprocess.run(["clear"])
         # 初始化打印区域
-        print("\n" * (num_threads * 3))
+        print("\n" * (num_threads * self.line_perthread))
 
     def hide_cursor(self):
         """隐藏终端光标"""
@@ -40,11 +40,13 @@ class TerminalPrinter:
         sys.stdout.flush()
 
     def print_at_position(self, thread_id, message):
+        # add ========
+        message = "========\n" + message + "\n========\n"
         """在指定位置打印消息"""
         with self.print_lock:
             # 计算该线程应该打印的行号
             if thread_id not in self.positions:
-                self.positions[thread_id] = thread_id * 3 + 1
+                self.positions[thread_id] = thread_id * self.line_perthread + 1
 
             line = self.positions[thread_id]
             # 移动光标
@@ -52,7 +54,7 @@ class TerminalPrinter:
             # 清除当前行
             sys.stdout.write("\033[K")
             # 打印消息
-            print(f"Thread-{thread_id}: {message}")
+            print(f"{message}")
             sys.stdout.flush()
 
 

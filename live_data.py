@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from datetime import datetime
+from typing import List
 
 import pytz
 
@@ -66,10 +67,13 @@ if __name__ == "__main__":  # noqa
     with open(f"assets/gameid_infos/gameid_token_{game_date}.json", "w") as f:
         json.dump(gameid_token, f, indent=4)
 
-    finished_game_ids = []
+    finished_game_ids: List[str] = []
     while gameid_token:
         logger.info("----------------------====================----------------------")
         to_check = False
+        if len(finished_game_ids) == len(gameid_token):
+            logger.info("all games finished, done")
+            break
         for game_id in list(gameid_token.keys()):
             home_team = gameid_token[game_id]["homeTeam"]["team"]
             away_team = gameid_token[game_id]["awayTeam"]["team"]
@@ -119,13 +123,18 @@ if __name__ == "__main__":  # noqa
                         gameid_token[game_id]["homeTeam"]["outcome_token_id"],
                         gameid_token[game_id]["awayTeam"]["outcome_token_id"],
                     ]
-                    buy_in(tokens=tokens, price_threshold=0.8)
-                    exit()
+                    try:
+                        buy_in(tokens=tokens, price_threshold=0.8)
+                    except Exception as e:
+                        logger.info(f"buy in counting {e}")
+                    # buy in success, remove game_id from gameid_token
+                    finished_game_ids.append(game_id)
+
             if info["gameStatus"] == 3:
                 logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
                 logger.info(f"score: {away_team_score} - {home_team_score}")
                 try:
-                    logger.info(f"buy in finished game: {game_id}")
+                    buy_in(tokens=tokens, price_threshold=0.8)
                 except Exception as e:
                     logger.info(f"buy in finished game fail: {e}")
                 finished_game_ids.append(game_id)
