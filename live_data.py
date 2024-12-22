@@ -1,15 +1,21 @@
 # Query nba.live.endpoints.scoreboard and  list games in localTimeZone
 import json
 import logging
+import sys
+import threading
 import time
 from datetime import datetime
-from typing import List
+from json.decoder import JSONDecodeError
+from typing import Dict, List
 
 import pytz
+from PyQt6.QtWidgets import QApplication
+from requests.exceptions import ReadTimeout
 
 from nba_api.live.nba.endpoints import boxscore
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.static import teams
+from tools.qt_printer import ThreadDisplayWindow
 from tools.utils import buy_in, check_flip, get_team_token, get_time_played
 
 logger = logging.getLogger(__name__)
@@ -23,8 +29,83 @@ logging.basicConfig(
 eastern = pytz.timezone("US/Eastern")
 game_date = datetime.now(eastern).strftime("%Y-%m-%d")
 logger.info(f"game_date now in us: {game_date}")
+price_limit = 1.0
+
+def buy_one_game(game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindow) -> str:
+    tokens = [
+        gameid_token[game_id]["homeTeam"]["outcome_token_id"],
+        gameid_token[game_id]["awayTeam"]["outcome_token_id"],
+    ]
+    match_up = f"{gameid_token[game_id]["homeTeam"]["team"]}_{gameid_token[game_id]["awayTeam"]["team"]}"  # noqa
+    while True:
+        to_check = False
+        home_team = gameid_token[game_id]["homeTeam"]["team"]
+        away_team = gameid_token[game_id]["awayTeam"]["team"]
+        try:
+            box = boxscore.BoxScore(game_id, timeout=5)
+            info = box.game.get_dict()  # equal to box.get_dict()["game"]
+            assert (
+                info["awayTeam"]["teamName"] == away_team
+                and info["homeTeam"]["teamName"] == home_team
+            ), "error, away team name not match"
+        except ReadTimeout as e:
+            logger.info(f"query {away_team} VS {home_team} timeout {e}")
+            continue
+        except JSONDecodeError as e:
+            logger.info(f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes")
+            qt_window.print(match_up, f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes")
+            time.sleep(300)
+            continue
+        except Exception as e:
+            logger.info(f"{away_team} VS {home_team}, some error {e}")
+            continue
+
+
+        home_team_score = info["homeTeam"]["score"]
+        away_team_score = info["awayTeam"]["score"]
+        status_text = info["gameStatusText"]
+        status = info["gameStatus"]
+        info_str = f"{away_team} {away_team_score} - {home_team} {home_team_score}  status: {status_text}"  # noqa
+        for keyword in ["Q3", "Q4", "OT"]:
+            if keyword in status_text and "END" not in status_text:
+                to_check = True
+                break
+
+        if to_check:
+            # calculate time left Q4 6:29 or Q4 :29 or Q4 :00.9
+            # try catch when testing, delete this when running
+            try:
+                time_played = get_time_played(status_text)
+            except Exception as e:
+                logger.info(f"error: {e} with {status_text} {status}")
+                continue
+            flip_rate = check_flip(time_played, away_team_score - home_team_score)
+            info_str += f" flip rate: {flip_rate}"
+            qt_window.print(match_up, info_str)
+            if flip_rate < 0.002:
+                try:
+                    _, price_pair = buy_in(tokens=tokens, price_threshold=0.8, price_limit=price_limit)
+                    qt_window.print(match_up, f"bought at {price_pair} with flip_rate {flip_rate}")
+                except Exception as e:
+                    logger.info(f"buying {away_team} vs. {home_team} fail: {e}")
+                break
+
+
+
+        if info["gameStatus"] == 3:
+            logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
+            logger.info(f"score: {away_team_score} - {home_team_score}")
+            try:
+                buy_in(tokens=tokens, price_threshold=0.8, price_limit=price_limit)
+            except Exception as e:
+                logger.info(f"buy in finished game fail: {e}")
+            break
+        if not to_check:
+            logger.info("no game to check, sleep for 5 minutes")
+            time.sleep(300)
 
 if __name__ == "__main__":  # noqa
+    app = QApplication(sys.argv)
     # get team and token according to game_date
     team_token = get_team_token(game_date, "nba")
     # get games from nba_api.stats.endpoints.ScoreboardV2
@@ -66,79 +147,27 @@ if __name__ == "__main__":  # noqa
     logger.info(gameid_token)
     with open(f"assets/gameid_infos/gameid_token_{game_date}.json", "w") as f:
         json.dump(gameid_token, f, indent=4)
+    if len(gameid_token) > 4:
+        logger.info("enough games, change price limit")
+        price_limit = 0.99
+    logger.info(f"price_limit {price_limit}")
+    # terminal_printer = TerminalPrinter(len(gameid_token))
+    threads = []
+    window_names = []
+    for game_id in gameid_token:
+        # buy_one_game(game_id, gameid_token)
+        match_up = f"{gameid_token[game_id]["homeTeam"]["team"]}_{gameid_token[game_id]["awayTeam"]["team"]}"
+        window_names.append(match_up)
+    qt_window = ThreadDisplayWindow(window_names)
+    qt_window.show()
+    for game_id in gameid_token:
+        # buy_one_game(game_id, gameid_token)
+        thread = threading.Thread(target=buy_one_game, args=(game_id, gameid_token, qt_window))
+        threads.append(thread)
+        thread.start()
 
-    finished_game_ids: List[str] = []
-    while gameid_token:
-        logger.info("----------------------====================----------------------")
-        to_check = False
-        if len(finished_game_ids) == len(gameid_token):
-            logger.info("all games finished, done")
-            break
-        for game_id in list(gameid_token.keys()):
-            home_team = gameid_token[game_id]["homeTeam"]["team"]
-            away_team = gameid_token[game_id]["awayTeam"]["team"]
-            if game_id in finished_game_ids:
-                continue
-            try:
-                box = boxscore.BoxScore(game_id, timeout=5)
-                info = box.game.get_dict()  # equal to box.get_dict()["game"]
-                assert (
-                    info["awayTeam"]["teamName"] == away_team
-                    and info["homeTeam"]["teamName"] == home_team
-                ), "error, away team name not match"
-            except Exception as e:
-                logger.info(
-                    f"query game {away_team} vs. {home_team} fail: {game_id} with {e}"
-                )
-                # don"t sleep here
-                to_check = True
-                continue
+    sys.exit(app.exec())
+    for thread in threads:
+        thread.join()
 
-            home_team_score = info["homeTeam"]["score"]
-            away_team_score = info["awayTeam"]["score"]
-            status_text = info["gameStatusText"]
-            status = info["gameStatus"]
-            info_str = f"{away_team} {away_team_score} - {home_team} {home_team_score}  status: {status_text}"  # noqa
-            for keyword in ["Q3", "Q4", "OT"]:
-                if keyword in status_text and "END" not in status_text:
-                    to_check = True
-                    break
-
-            if to_check:
-                # calculate time left Q4 6:29 or Q4 :29 or Q4 :00.9
-                # try catch when testing, delete this when running
-                try:
-                    time_played = get_time_played(status_text)
-                except Exception as e:
-                    logger.info(f"error: {e} with {status_text} {status}")
-                    continue
-                flip_rate = check_flip(time_played, away_team_score - home_team_score)
-                info_str += f" flip rate: {flip_rate}"
-                if flip_rate < 0.002:
-                    logger.info(info_str)
-                    logger.info(
-                        f"{game_id}: {away_team} vs. {home_team} flip rate: {flip_rate}"
-                    )
-                    tokens = [
-                        gameid_token[game_id]["homeTeam"]["outcome_token_id"],
-                        gameid_token[game_id]["awayTeam"]["outcome_token_id"],
-                    ]
-                    try:
-                        buy_in(tokens=tokens, price_threshold=0.8)
-                    except Exception as e:
-                        logger.info(f"buy in counting {e}")
-                    # buy in success, remove game_id from gameid_token
-                    finished_game_ids.append(game_id)
-
-            if info["gameStatus"] == 3:
-                logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
-                logger.info(f"score: {away_team_score} - {home_team_score}")
-                try:
-                    buy_in(tokens=tokens, price_threshold=0.8)
-                except Exception as e:
-                    logger.info(f"buy in finished game fail: {e}")
-                finished_game_ids.append(game_id)
-            logger.info(info_str)
-        if not to_check:
-            logger.info("no game to check, sleep for 5 minutes")
-            time.sleep(300)
+    logger.info("All game finished !")
