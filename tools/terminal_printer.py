@@ -51,8 +51,10 @@ class TerminalPrinter:
             line = self.positions[thread_id]
             # 移动光标
             self.move_cursor(line)
-            # 清除当前行
-            sys.stdout.write("\033[K")
+            # 清除多行
+            for _ in range(self.line_perthread):
+                sys.stdout.write("\033[K")
+                sys.stdout.write("\n")
             # 打印消息
             print(f"{message}")
             sys.stdout.flush()

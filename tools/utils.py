@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from pathlib import Path
 
 import pandas as pd
@@ -42,6 +43,66 @@ quater_map = {
     "OT2": 6,
     "OT3": 7,
 }
+
+
+class ThreadSafeDict:
+    def __init__(self):
+        self._dict = {}
+        self._lock = threading.Lock()
+
+    # 通过 [] 访问值
+    def __getitem__(self, key):
+        with self._lock:
+            return self._dict[key]
+
+    # 通过 [] 设置值
+    def __setitem__(self, key, value):
+        with self._lock:
+            self._dict[key] = value
+
+    # 删除键
+    def __delitem__(self, key):
+        with self._lock:
+            del self._dict[key]
+
+    # 检查键是否存在
+    def __contains__(self, key):
+        with self._lock:
+            return key in self._dict
+
+    # 支持 len() 获取字典大小
+    def __len__(self):
+        with self._lock:
+            return len(self._dict)
+
+    # 返回迭代器
+    def __iter__(self):
+        with self._lock:
+            # 创建一个独立的键列表以避免迭代期间的修改问题
+            return iter(list(self._dict.keys()))
+
+    # 获取字典中的所有键值对
+    def items(self):
+        with self._lock:
+            return list(self._dict.items())
+
+    # 设置值
+    def set(self, key, value):
+        self[key] = value
+
+    # 获取值，若键不存在返回默认值
+    def get(self, key, default=None):
+        with self._lock:
+            return self._dict.get(key, default)
+
+    # 删除键值对
+    def remove(self, key):
+        del self[key]
+
+    # 清空字典
+    def clear(self):
+        with self._lock:
+            self._dict.clear()
 
 
 def get_team_token(game_date: str, tag_slug) -> dict:
@@ -135,14 +196,12 @@ def check_flip(time_played, score_diff):
     return fliped_rate
 
 
-def buy_in(tokens, price_threshold=0.9):
-    max_price = 0
+def buy_in(tokens, price_threshold=0.9, price_limit=1.0):
+    price_pair = []
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
-        logger.info(f"{token} current price is {price}")
-        if price > max_price:
-            max_price = price
-        if price >= price_threshold and price < 1.0:
+        price_pair.append(price)
+        if price >= price_threshold and price < 1.0 and price <= price_limit:
             tick_size = float(client.get_tick_size(token))
             logger.info(f"tick_size is {tick_size}")
             buy_price = min(price, 1.0 - tick_size)
@@ -159,5 +218,5 @@ def buy_in(tokens, price_threshold=0.9):
             time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             with open("assets/buy_in.log", "a") as f:
                 f.write(f"{token} {buy_price} {size} @{time_str}\n")
-            return True
-    return False
+            return True, price_pair
+    return False, price_pair
