@@ -4,6 +4,7 @@ import sys
 import threading
 import time
 
+from py_clob_client.exceptions import PolyApiException
 from PyQt6.QtWidgets import QApplication
 
 from tools.qt_printer import ThreadDisplayWindow
@@ -35,9 +36,14 @@ def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
                 logger.info(f"buy in {slug} done with price {price_pair}, close")
                 qt_window.print(slug, f"bought at {price_pair}")
                 break
+        except PolyApiException as e:
+            logger.error(f"{slug} PolyApiException error: {e}")
+            if "not enough balance" in str(e):
+                logger.error("not enough balance, close")
+                qt_window.print(slug, "not enough balance")
+                break
         except Exception as e:
             logger.error(f"{slug} error: {e}")
-            pass
         time.sleep(total_threads / 10)
     with open(f"assets/prices/{slug}_{token_pair[0]}_{token_pair[1]}", "w") as f:
         for time_stamp, price_pair in time_price_list:
@@ -48,7 +54,7 @@ if __name__ == "__main__":
     # 创建应用
     app = QApplication(sys.argv)
     slug_token_pairs = {}
-    events_file = "/home/zx/code/nba_api/assets/events_nfl_2024-12-22.json"
+    events_file = "/home/zx/code/nba_api/assets/events_cfb_2024-12-23.json"
     with open(events_file, "r") as f:
         events = json.load(f)
     for event in events:

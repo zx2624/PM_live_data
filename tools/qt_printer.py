@@ -1,6 +1,7 @@
 import logging
 import sys
 import threading
+from typing import Dict
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -37,7 +38,7 @@ class ThreadDisplayWindow(QMainWindow):
         self.names = names
         logger.info(f"names {names}")
         self.num_threads = len(names)
-        self.message_labels = {}  # 存储显示标签的字典，使用名称作为键
+        self.message_labels: Dict[str, QLabel] = {}  # 存储显示标签的字典，使用名称作为键
         self.printer = ThreadPrinter()
         self.printer.print_signal.connect(self._handle_print)
         self.setup_ui()
@@ -58,7 +59,7 @@ class ThreadDisplayWindow(QMainWindow):
         rows = (self.num_threads + 1) // 4  # 计算需要的行数
 
         # 创建显示区域
-        for row in range(rows):
+        for row in range(rows + 1):
             row_layout = QHBoxLayout()
             for col in range(cols):
                 idx = row * cols + col
