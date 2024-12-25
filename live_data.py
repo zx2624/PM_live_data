@@ -6,7 +6,7 @@ import threading
 import time
 from datetime import datetime
 from json.decoder import JSONDecodeError
-from typing import Dict, List
+from typing import Dict
 
 import pytz
 from PyQt6.QtWidgets import QApplication
@@ -31,16 +31,19 @@ game_date = datetime.now(eastern).strftime("%Y-%m-%d")
 logger.info(f"game_date now in us: {game_date}")
 price_limit = 1.0
 
-def buy_one_game(game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindow) -> str:
+
+def buy_one_game(  # noqa
+    game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindow
+):
+    home_team = gameid_token[game_id]["homeTeam"]["team"]
+    away_team = gameid_token[game_id]["awayTeam"]["team"]
     tokens = [
         gameid_token[game_id]["homeTeam"]["outcome_token_id"],
         gameid_token[game_id]["awayTeam"]["outcome_token_id"],
     ]
-    match_up = f"{gameid_token[game_id]["homeTeam"]["team"]}_{gameid_token[game_id]["awayTeam"]["team"]}"  # noqa
+    match_up = f"{away_team}_{home_team}"  # noqa
     while True:
         to_check = False
-        home_team = gameid_token[game_id]["homeTeam"]["team"]
-        away_team = gameid_token[game_id]["awayTeam"]["team"]
         try:
             box = boxscore.BoxScore(game_id, timeout=5)
             info = box.game.get_dict()  # equal to box.get_dict()["game"]
@@ -52,14 +55,18 @@ def buy_one_game(game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindo
             logger.info(f"query {away_team} VS {home_team} timeout {e}")
             continue
         except JSONDecodeError as e:
-            logger.info(f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes")
-            qt_window.print(match_up, f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes")
+            logger.info(
+                f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes"
+            )  # noqa
+            qt_window.print(
+                match_up,
+                f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes",
+            )  # noqa
             time.sleep(300)
             continue
         except Exception as e:
             logger.info(f"{away_team} VS {home_team}, some error {e}")
             continue
-
 
         home_team_score = info["homeTeam"]["score"]
         away_team_score = info["awayTeam"]["score"]
@@ -81,16 +88,19 @@ def buy_one_game(game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindo
                 continue
             flip_rate = check_flip(time_played, away_team_score - home_team_score)
             info_str += f" flip rate: {flip_rate}"
-            qt_window.print(match_up, info_str)
             if flip_rate < 0.002:
                 try:
-                    _, price_pair = buy_in(tokens=tokens, price_threshold=0.8, price_limit=price_limit)
-                    qt_window.print(match_up, f"bought at {price_pair} with flip_rate {flip_rate}")
+                    _, price_pair = buy_in(
+                        tokens=tokens, price_threshold=0.8, price_limit=price_limit
+                    )
+                    qt_window.print(
+                        match_up, f"bought at {price_pair} with flip_rate {flip_rate}"
+                    )
                 except Exception as e:
                     logger.info(f"buying {away_team} vs. {home_team} fail: {e}")
                 break
 
-
+        qt_window.print(match_up, info_str)
 
         if info["gameStatus"] == 3:
             logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
@@ -103,6 +113,8 @@ def buy_one_game(game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindo
         if not to_check:
             logger.info("no game to check, sleep for 5 minutes")
             time.sleep(300)
+    logger.info(f"{away_team} vs. {home_team} finished")
+
 
 if __name__ == "__main__":  # noqa
     app = QApplication(sys.argv)
@@ -155,19 +167,21 @@ if __name__ == "__main__":  # noqa
     threads = []
     window_names = []
     for game_id in gameid_token:
-        # buy_one_game(game_id, gameid_token)
-        match_up = f"{gameid_token[game_id]["homeTeam"]["team"]}_{gameid_token[game_id]["awayTeam"]["team"]}"
+        home_team = gameid_token[game_id]["homeTeam"]["team"]
+        away_team = gameid_token[game_id]["awayTeam"]["team"]
+        match_up = f"{away_team}_{home_team}"
         window_names.append(match_up)
     qt_window = ThreadDisplayWindow(window_names)
     qt_window.show()
     for game_id in gameid_token:
         # buy_one_game(game_id, gameid_token)
-        thread = threading.Thread(target=buy_one_game, args=(game_id, gameid_token, qt_window))
+        thread = threading.Thread(
+            target=buy_one_game, args=(game_id, gameid_token, qt_window)
+        )
         threads.append(thread)
         thread.start()
 
-    sys.exit(app.exec())
+    app.exec()
     for thread in threads:
         thread.join()
-
     logger.info("All game finished !")
