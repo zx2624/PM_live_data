@@ -3,12 +3,14 @@ import logging
 import sys
 import threading
 import time
+from datetime import datetime
 
+import pytz
 from py_clob_client.exceptions import PolyApiException
 from PyQt6.QtWidgets import QApplication
 
 from tools.qt_printer import ThreadDisplayWindow
-from tools.utils import buy_in
+from tools.utils import buy_in, query_events
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -17,6 +19,7 @@ logging.basicConfig(
 total_threads = 10
 price_threshold = 0.99
 price_limit = 0.995
+spread_th = 0.02
 
 
 def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
@@ -28,6 +31,7 @@ def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
                 tokens=token_pair,
                 price_threshold=price_threshold,
                 price_limit=price_limit,
+                spread_th=spread_th,
             )
             time_price_list.append((time_stamp, price_pair))
             logger.info(f"{slug}, price {price_pair}")
@@ -54,9 +58,10 @@ if __name__ == "__main__":
     # 创建应用
     app = QApplication(sys.argv)
     slug_token_pairs = {}
-    events_file = "/home/zx/code/nba_api/assets/events_cfb_2024-12-23.json"
-    with open(events_file, "r") as f:
-        events = json.load(f)
+    tag_slug = "nfl"
+    eastern = pytz.timezone("US/Eastern")
+    game_date = datetime.now(eastern).strftime("%Y-%m-%d")
+    events = query_events(tag_slug, game_date)
     for event in events:
         for market in event["markets"]:
             # token pair str in "[\"token1, token2\"]"
