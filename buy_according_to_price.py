@@ -19,7 +19,7 @@ logging.basicConfig(
 total_threads = 10
 price_threshold = 0.99
 price_limit = 0.995
-spread_th = 0.02
+spread_th = 0.03
 
 
 def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
@@ -34,11 +34,12 @@ def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
                 spread_th=spread_th,
             )
             time_price_list.append((time_stamp, price_pair))
-            logger.info(f"{slug}, price {price_pair}")
-            qt_window.print(slug, f"price {price_pair}")
+            price_str = "_".join([f"{price:.6}" for price in price_pair])
+            logger.info(f"{slug}, price {price_str}")
+            qt_window.print(slug, f"price {price_str}")
             if bought:
-                logger.info(f"buy in {slug} done with price {price_pair}, close")
-                qt_window.print(slug, f"bought at {price_pair}")
+                logger.info(f"buy in {slug} done with price {price_str}, close")
+                qt_window.print(slug, f"bought at {price_str}")
                 break
         except PolyApiException as e:
             logger.error(f"{slug} PolyApiException error: {e}")
