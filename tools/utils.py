@@ -162,7 +162,7 @@ def check_flip(time_played, score_diff):
     return fliped_rate
 
 
-def buy_in(tokens, price_threshold=0.9, price_limit=1.0, spread_th=0.01):
+def buy_in(tokens, price_threshold=0.9, price_limit=1.0, spread_th=None):
     price_pair = []
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
