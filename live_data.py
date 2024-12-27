@@ -4,11 +4,9 @@ import logging
 import sys
 import threading
 import time
-from datetime import datetime
 from json.decoder import JSONDecodeError
 from typing import Dict
 
-import pytz
 from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
 
@@ -24,11 +22,6 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-
-# get game_date time_now in us tz
-eastern = pytz.timezone("US/Eastern")
-game_date = datetime.now(eastern).strftime("%Y-%m-%d")
-logger.info(f"game_date now in us: {game_date}")
 price_limit = 1.0
 
 
@@ -37,10 +30,8 @@ def buy_one_game(  # noqa
 ):
     home_team = gameid_token[game_id]["homeTeam"]["team"]
     away_team = gameid_token[game_id]["awayTeam"]["team"]
-    tokens = [
-        gameid_token[game_id]["homeTeam"]["outcome_token_id"],
-        gameid_token[game_id]["awayTeam"]["outcome_token_id"],
-    ]
+    home_token = gameid_token[game_id]["homeTeam"]["outcome_token_id"]
+    away_token = gameid_token[game_id]["awayTeam"]["outcome_token_id"]
     match_up = f"{away_team}_{home_team}"  # noqa
     while True:
         to_check = False
@@ -88,13 +79,22 @@ def buy_one_game(  # noqa
                 continue
             flip_rate = check_flip(time_played, away_team_score - home_team_score)
             info_str += f" flip rate: {flip_rate}"
+            token_to_check = (
+                away_token if away_team_score > home_team_score else home_token
+            )  # noqa
+            team_to_check = (
+                away_team if away_team_score > home_team_score else home_team
+            )  # noqa
             if flip_rate < 0.002:
                 try:
                     _, price_pair = buy_in(
-                        tokens=tokens, price_threshold=0.8, price_limit=price_limit
+                        tokens=[token_to_check],
+                        price_threshold=0.7,
+                        price_limit=price_limit,
                     )
                     qt_window.print(
-                        match_up, f"bought at {price_pair} with flip_rate {flip_rate}"
+                        match_up,
+                        f"bought {team_to_check} at {price_pair} with flip_rate {flip_rate}",  # noqa
                     )
                 except Exception as e:
                     logger.info(f"buying {away_team} vs. {home_team} fail: {e}")
@@ -105,10 +105,10 @@ def buy_one_game(  # noqa
         if info["gameStatus"] == 3:
             logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
             logger.info(f"score: {away_team_score} - {home_team_score}")
-            try:
-                buy_in(tokens=tokens, price_threshold=0.8, price_limit=price_limit)
-            except Exception as e:
-                logger.info(f"buy in finished game fail: {e}")
+            # try:
+            #     buy_in(tokens=tokens, price_threshold=0.8, price_limit=price_limit)
+            # except Exception as e:
+            #     logger.info(f"buy in finished game fail: {e}")
             break
         if not to_check:
             logger.info("no game to check, sleep for 5 minutes")
@@ -119,6 +119,7 @@ def buy_one_game(  # noqa
 if __name__ == "__main__":  # noqa
     app = QApplication(sys.argv)
     # get team and token according to game_date
+    game_date = "2024-12-26"
     team_token = get_team_token(game_date, "nba")
     # get games from nba_api.stats.endpoints.ScoreboardV2
     board = ScoreboardV2(game_date=game_date)
