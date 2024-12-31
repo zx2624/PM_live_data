@@ -182,9 +182,13 @@ def buy_in(tokens, price_threshold=0.9, price_limit=1.0, spread_th=None):
                 res = client.create_and_post_order(
                     OrderArgs(price=buy_price, size=size, side=BUY, token_id=token)
                 )
+                order_book = client.get_order_book(token)
+                logger.info(f"{token} order_book: {order_book}")
             except PolyApiException as e:
                 if "not enough balance" in str(e):
                     logger.error("not enough balance, pretend I bought it")
+                    order_book = client.get_order_book(token)
+                    logger.info(f"{token} order_book: {order_book}")
                     return True, price_pair
                 else:
                     raise e
