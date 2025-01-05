@@ -19,10 +19,13 @@ from tools.utils import buy_in, check_flip, get_team_token, get_time_played
 logger = logging.getLogger(__name__)
 # logger with file line and time
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
 )
 
-price_limit = 1.0
+price_limit = 0.995
+game_date = "2025-01-05"
+balance_split = 1.0
 
 
 def buy_one_game(  # noqa
@@ -33,6 +36,7 @@ def buy_one_game(  # noqa
     home_token = gameid_token[game_id]["homeTeam"]["outcome_token_id"]
     away_token = gameid_token[game_id]["awayTeam"]["outcome_token_id"]
     match_up = f"{away_team}_{home_team}"  # noqa
+    bought_str = ""
     while True:
         to_check = False
         try:
@@ -68,7 +72,10 @@ def buy_one_game(  # noqa
             if keyword in status_text and "END" not in status_text:
                 to_check = True
                 break
-
+        for keyword in ["Half", "End", "pre", "Q1", "Q2"]:
+            if keyword in status_text:
+                logger.info(f"{away_team} vs. {home_team} {status_text}, sleeping")
+                time.sleep(60)
         if to_check:
             # calculate time left Q4 6:29 or Q4 :29 or Q4 :00.9
             # try catch when testing, delete this when running
@@ -85,23 +92,20 @@ def buy_one_game(  # noqa
             team_to_check = (
                 away_team if away_team_score > home_team_score else home_team
             )  # noqa
-            if flip_rate < 0.002:
+            if flip_rate < 0.002 and bought_str == "":
                 try:
                     _, price_pair = buy_in(
                         tokens=[token_to_check],
                         price_threshold=0.7,
                         price_limit=price_limit,
+                        balance_split=balance_split,
                     )
-                    qt_window.print(
-                        match_up,
-                        f"bought {team_to_check} at {price_pair} with flip_rate {flip_rate}",  # noqa
-                    )
+                    bought_str = f"bought {team_to_check} at {price_pair} with flip_rate {flip_rate}"  # noqa
                 except Exception as e:
                     logger.info(f"buying {away_team} vs. {home_team} fail: {e}")
-                break
-
+        info_str = f"{info_str}\n {bought_str}"
         qt_window.print(match_up, info_str)
-
+        logger.info(info_str)
         if info["gameStatus"] == 3:
             logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
             logger.info(f"score: {away_team_score} - {home_team_score}")
@@ -110,16 +114,21 @@ def buy_one_game(  # noqa
             # except Exception as e:
             #     logger.info(f"buy in finished game fail: {e}")
             break
-        if not to_check:
-            logger.info("no game to check, sleep for 5 minutes")
-            time.sleep(300)
     logger.info(f"{away_team} vs. {home_team} finished")
 
 
+def kill_window():
+    logger.info("===========kill window========")
+    time.sleep(1)
+    # sys.exit()
+
+
 if __name__ == "__main__":  # noqa
+    import signal
+
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication(sys.argv)
     # get team and token according to game_date
-    game_date = "2024-12-26"
     team_token = get_team_token(game_date, "nba")
     # get games from nba_api.stats.endpoints.ScoreboardV2
     board = ScoreboardV2(game_date=game_date)
@@ -160,10 +169,11 @@ if __name__ == "__main__":  # noqa
     logger.info(gameid_token)
     with open(f"assets/gameid_infos/gameid_token_{game_date}.json", "w") as f:
         json.dump(gameid_token, f, indent=4)
-    if len(gameid_token) > 4:
-        logger.info("enough games, change price limit")
-        price_limit = 0.99
-    logger.info(f"price_limit {price_limit}")
+    # try to buy half of the games
+    balance_split = len(gameid_token) // 2
+    if balance_split == 0:
+        balance_split = 1
+    logger.info(f"price_limit {price_limit}, balance_split {balance_split}")
     # terminal_printer = TerminalPrinter(len(gameid_token))
     threads = []
     window_names = []
