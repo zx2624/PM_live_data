@@ -12,7 +12,6 @@ from py_clob_client.order_builder.constants import BUY, SELL
 
 from agents.polymarket.gamma import GammaMarketClient as Gamma
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 host: str = "https://clob.polymarket.com"
@@ -47,6 +46,9 @@ quater_map = {
 
 
 def query_events(tag_slug: str, game_date: str) -> list:
+    """
+    query events according to tag_slug and game_date
+    """
     gamma = Gamma()
     querystring_params = {
         "limit": 1000,
@@ -70,6 +72,13 @@ def query_events(tag_slug: str, game_date: str) -> list:
     with open(f"assets/events_{tag_slug}_{game_date}.json", "w") as f:
         json.dump(filtered_events, f, indent=4)
     return filtered_events
+
+
+def query_events_by_slug(slug: str) -> list:
+    gamma = Gamma()
+    querystring_params = {"slug": slug}
+    events = gamma.get_events(querystring_params=querystring_params)
+    return events
 
 
 def get_team_token(game_date: str, tag_slug) -> dict:
@@ -159,10 +168,16 @@ def check_flip(time_played, score_diff):
     )
     fliped_games = data_over_score_diff[data_over_score_diff["product"] < 0]
     fliped_rate = len(fliped_games) / len(data_over_score_diff)
+    logger.info(
+        f"fliped_rate: {fliped_rate}, {len(fliped_games)} / {len(data_over_score_diff)}"
+    )
     return fliped_rate
 
 
-def buy_in(tokens, price_threshold=0.9, price_limit=1.0, spread_th=None):
+def buy_in(
+    tokens, price_threshold=0.9, price_limit=1.0, spread_th=None, balance_split=1.0
+):
+    current_balance = balance / balance_split
     price_pair = []
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
@@ -176,7 +191,7 @@ def buy_in(tokens, price_threshold=0.9, price_limit=1.0, spread_th=None):
             tick_size = float(client.get_tick_size(token))
             logger.info(f"tick_size is {tick_size}")
             buy_price = min(price, 1.0 - tick_size)
-            size = balance / buy_price
+            size = current_balance / buy_price
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
             try:
                 res = client.create_and_post_order(
