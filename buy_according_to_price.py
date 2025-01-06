@@ -22,7 +22,7 @@ total_threads = 10
 price_threshold = 0.995
 price_limit = 0.998
 spread_th = 0.03
-balance_split = 1.0
+balance_split = 4
 
 
 def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
@@ -59,7 +59,7 @@ def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
 
 
 def buy_in_thread(token_slug, bookparams, qt_window=None):
-    slug_bought_str = ""
+    slug_bought_str = {}
     while True:
         slug_prices = defaultdict(list)
         slug_spread = {}
@@ -72,6 +72,10 @@ def buy_in_thread(token_slug, bookparams, qt_window=None):
         possible_token_price_slug = []
         for token in token_slug.keys():
             slug = token_slug[token]
+            if slug in slug_bought_str:
+                continue
+            if token not in prices or token not in spreads:
+                continue
             price = float(prices[token][SELL])
             spread = float(spreads[token])
             slug_prices[slug].append(price)
@@ -130,7 +134,7 @@ if __name__ == "__main__":
     # 创建应用
     app = QApplication(sys.argv)
     slug_token_pairs = {}
-    tag_slug = "EPL"
+    tag_slug = "nfl"
     game_date = "2025-01-05"
     events = query_events(tag_slug, game_date)
     # slug = "will-bitcoin-hit-100k-again-in-2024-dec-23"
@@ -155,10 +159,6 @@ if __name__ == "__main__":
             token_slug[token_pair[0]] = slug
             token_slug[token_pair[1]] = slug
     bookparams = [BookParams(token, SELL) for token in token_slug.keys()]
-    # two token one slug
-    balance_split = len(token_slug) // 2
-    logger.info(f"balance_split: {balance_split}")
-    assert balance_split > 0
     thread = threading.Thread(
         target=buy_in_thread, args=(token_slug, bookparams, qt_window)
     )
