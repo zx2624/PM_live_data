@@ -25,7 +25,7 @@ logging.basicConfig(
 
 price_limit = 0.995
 game_date = "2025-01-05"
-balance_split = 1.0
+balance_split = 2.0
 
 
 def buy_one_game(  # noqa
@@ -169,10 +169,6 @@ if __name__ == "__main__":  # noqa
     logger.info(gameid_token)
     with open(f"assets/gameid_infos/gameid_token_{game_date}.json", "w") as f:
         json.dump(gameid_token, f, indent=4)
-    # try to buy half of the games
-    balance_split = len(gameid_token) // 2
-    if balance_split == 0:
-        balance_split = 1
     logger.info(f"price_limit {price_limit}, balance_split {balance_split}")
     # terminal_printer = TerminalPrinter(len(gameid_token))
     threads = []
