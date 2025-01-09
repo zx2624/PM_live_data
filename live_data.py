@@ -5,8 +5,11 @@ import sys
 import threading
 import time
 from json.decoder import JSONDecodeError
+from multiprocessing import Manager
 from typing import Dict
 
+from py_clob_client.clob_types import BookParams
+from py_clob_client.order_builder.constants import SELL
 from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
 
@@ -14,18 +17,53 @@ from nba_api.live.nba.endpoints import boxscore
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.static import teams
 from tools.qt_printer import ThreadDisplayWindow
-from tools.utils import buy_in, check_flip, get_team_token, get_time_played
+from tools.utils import buy_in, check_flip, client, get_team_token, get_time_played
 
 logger = logging.getLogger(__name__)
-# logger with file line and time
+# # logger with file line and time
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
+# )
+
+price_limit = 0.998
+sell_th = 0.85
+game_date = "2025-01-08"
+logger_file = f"logs/live_data_{game_date}_{time.time()}.log"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
+    handlers=[
+        logging.FileHandler(logger_file, mode="w"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
+balance_split = 3
+token_shares = Manager().dict()
 
-price_limit = 0.995
-game_date = "2025-01-05"
-balance_split = 2.0
+
+def sell_when_too_low():
+    while True:
+        if len(token_shares) == 0:
+            time.sleep(60)
+            continue
+        bookparams = [BookParams(token, SELL) for token in list(token_shares.keys())]
+        prices = client.get_prices(bookparams)
+        for token in token_shares:
+            # shares = token_shares[token]
+            if token not in prices:
+                logger.warning(f"token {token} not in prices")
+                continue
+            # price = float(prices[token][SELL])
+            # if price <= sell_th:
+            # res = client.create_and_post_order(
+            #     OrderArgs(price=0.99, size=410 , side=SELL, token_id=token_id)
+            # )
+            # print(res)
+            # orderid = res["orderID"]
+            # res = client.get_order("0x7849dae5bfcdcc59ea9c7440a9782089e1538b7e9248b74eba58771b151d6e74")  # noqa
+            # print(res)
+            # size_matched = res["size_matched"]
 
 
 def buy_one_game(  # noqa
@@ -106,6 +144,7 @@ def buy_one_game(  # noqa
         info_str = f"{info_str}\n {bought_str}"
         qt_window.print(match_up, info_str)
         logger.info(info_str)
+        # TODO: check Q4 END
         if info["gameStatus"] == 3:
             logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
             logger.info(f"score: {away_team_score} - {home_team_score}")
