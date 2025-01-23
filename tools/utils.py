@@ -38,10 +38,9 @@ df = pd.concat([pd.read_csv(file) for file in csv_files])
 quater_map = {
     "Q3": 3,
     "Q4": 4,
-    "OT": 5,
-    "OT1": 5,
-    "OT2": 6,
-    "OT3": 7,
+    "OT": 4,  # pretend OT is 4th quater
+    "2OT": 4,  # pretend 2OT is 4th quater
+    "3OT": 4,  # pretend 3OT is 4th quater
 }
 
 
@@ -127,8 +126,13 @@ def get_team_token(game_date: str, tag_slug) -> dict:
 
 
 def get_time_played(status_text):
-    quater, time_str = status_text.split(" ")[0], status_text.split(" ")[1]
-    quater = quater_map[quater]
+    if status_text.startswith("END"):
+        quater = status_text.split(" ")[1]
+        quater = quater_map[quater]
+        time_str = "0:00"
+    else:
+        quater, time_str = status_text.split(" ")[0], status_text.split(" ")[1]
+        quater = quater_map[quater]
     if time_str.startswith(":"):
         time_left = float(time_str[1:])
     else:
@@ -174,10 +178,37 @@ def check_flip(time_played, score_diff):
     return fliped_rate
 
 
+def buy(token: str, price, price_threshold=0.9, price_limit=1.0, balance_split=1.0):
+    current_balance = (balance - 0.5) / balance_split
+    size = current_balance / price
+    if price >= price_threshold and price < 1.0 and price <= price_limit:
+        logger.info(f"Im buying {token} at {price} for {size} shares")
+        try:
+            res = client.create_and_post_order(
+                OrderArgs(price=price, size=price_limit, side=BUY, token_id=token)
+            )
+            if "orderID" in res:
+                orderid = res["orderID"]
+                order_res = client.get_order(orderid)
+                logger.info(f"{token} order_res: {order_res}")
+            logger.info(f"{token} res: {res}")
+            order_book = client.get_order_book(token)
+            logger.info(f"{token} order_book: {order_book}")
+
+        except PolyApiException as e:
+            if "not enough balance" in str(e):
+                logger.error("not enough balance, pretend I bought it")
+                order_book = client.get_order_book(token)
+                logger.info(f"{token} order_book: {order_book}")
+                return True
+            else:
+                raise e
+
+
 def buy_in(
     tokens, price_threshold=0.9, price_limit=1.0, spread_th=None, balance_split=1.0
 ):
-    current_balance = balance / balance_split
+    current_balance = (balance - 0.5) / balance_split
     price_pair = []
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
@@ -190,7 +221,7 @@ def buy_in(
                     return False, price_pair
             tick_size = float(client.get_tick_size(token))
             logger.info(f"tick_size is {tick_size}")
-            buy_price = min(price, 1.0 - tick_size)
+            buy_price = min(price + 2 * tick_size, 1.0 - tick_size)
             size = current_balance / buy_price
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
             try:
@@ -198,7 +229,11 @@ def buy_in(
                     OrderArgs(price=buy_price, size=size, side=BUY, token_id=token)
                 )
                 order_book = client.get_order_book(token)
-                logger.info(f"{token} order_book: {order_book}")
+                logger.info(f"{token} order_book: {order_book} res: {res}")
+                if "orderID" in res:
+                    orderid = res["orderID"]
+                    order_res = client.get_order(orderid)
+                    logger.info(f"{token} order_res: {order_res}")
             except PolyApiException as e:
                 if "not enough balance" in str(e):
                     logger.error("not enough balance, pretend I bought it")
