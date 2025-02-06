@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # )
 
 price_limit = 0.998
-sell_th = 0.85
-game_date = "2025-01-08"
+sell_th = 0.95
+game_date = "2025-02-06"
 logger_file = f"logs/live_data_{game_date}_{time.time()}.log"
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +38,7 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
-balance_split = 3
+balance_split = 4
 token_shares = Manager().dict()
 
 
@@ -107,10 +107,10 @@ def buy_one_game(  # noqa
         status = info["gameStatus"]
         info_str = f"{away_team} {away_team_score} - {home_team} {home_team_score}  status: {status_text}"  # noqa
         for keyword in ["Q3", "Q4", "OT"]:
-            if keyword in status_text and "END" not in status_text:
+            if keyword in status_text:
                 to_check = True
                 break
-        for keyword in ["Half", "End", "pre", "Q1", "Q2"]:
+        for keyword in ["Half", "pre", "Q1", "Q2"]:
             if keyword in status_text:
                 logger.info(f"{away_team} vs. {home_team} {status_text}, sleeping")
                 time.sleep(60)
@@ -130,7 +130,7 @@ def buy_one_game(  # noqa
             team_to_check = (
                 away_team if away_team_score > home_team_score else home_team
             )  # noqa
-            if flip_rate < 0.002 and bought_str == "":
+            if flip_rate < 0.005 and bought_str == "":
                 try:
                     _, price_pair = buy_in(
                         tokens=[token_to_check],
@@ -138,11 +138,12 @@ def buy_one_game(  # noqa
                         price_limit=price_limit,
                         balance_split=balance_split,
                     )
-                    bought_str = f"bought {team_to_check} at {price_pair} with flip_rate {flip_rate}"  # noqa
+                    bought_str = f"bought {team_to_check} at {price_pair} with flip_rate {flip_rate} {status_text}"  # noqa
+                    logger.info(bought_str)
                 except Exception as e:
                     logger.info(f"buying {away_team} vs. {home_team} fail: {e}")
-        info_str = f"{info_str}\n {bought_str}"
-        qt_window.print(match_up, info_str)
+        info_str = f"{info_str}"
+        qt_window.print(match_up, info_str + f" {bought_str}")
         logger.info(info_str)
         # TODO: check Q4 END
         if info["gameStatus"] == 3:
