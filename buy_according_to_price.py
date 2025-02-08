@@ -15,15 +15,27 @@ from tools.utils import query_events_by_slug  # noqa
 from tools.utils import balance, buy_in, client, query_events  # noqa
 
 logger = logging.getLogger(__name__)
+logger_file = f"logs/buy_according_price_{time.strftime("%Y-%m-%d", time.localtime())}.log"
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
+    handlers=[
+        logging.FileHandler(logger_file, mode="w"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
+events = []
+# tag_slug = "nfl"
+# game_date = "2025-01-19"
+# events = query_events(tag_slug, game_date)
+slugs = ["how-many-executive-orders-will-trump-issue-on-day-1", ]
+for slug in slugs:
+    events.extend(query_events_by_slug(slug))
 total_threads = 10
 price_threshold = 0.995
 price_limit = 0.998
-spread_th = 0.03
-balance_split = 4
-
+spread_th = 0.01
+balance_split = 3
 
 def buy_one(slug, token_pair, price_threshold=0.9, qt_window=None):
     time_price_list = []
@@ -97,9 +109,7 @@ def buy_in_thread(token_slug, bookparams, qt_window=None):
         possible_token_price_slug.sort(key=lambda x: x[1])
         for token, price, slug in possible_token_price_slug:
             size = balance / balance_split / price
-            bought_str = f"bought {slug} at {price:.6} for {size:.6} shares"
-            logger.info(bought_str)
-            qt_window.print(slug, bought_str)
+            bought_str = f"bought {slug} {token} at {price:.6} for {size:.6} shares"
             try:
                 client.create_and_post_order(
                     OrderArgs(price=price, size=size, side=BUY, token_id=token)
@@ -110,12 +120,16 @@ def buy_in_thread(token_slug, bookparams, qt_window=None):
             except PolyApiException as e:
                 if "not enough balance" in str(e):
                     logger.error("not enough balance, pretend I bought it")
-                    logger.info(f"buy in {slug} {size} with price {price:.6}")
                     order_book = client.get_order_book(token)
                     logger.info(f"{token} order_book: {order_book}")
                     slug_bought_str[slug] = bought_str
+                    # break
                 else:
-                    raise e
+                    logger.info(f"{slug} PolyApiException error: {e}")
+                    bought_str = f"error {e}"
+                    continue
+            logger.info(bought_str)
+            qt_window.print(slug, bought_str)
         if len(slug_bought_str) == len(token_slug) // 2:
             logger.info("buy in all done")
             break
@@ -134,11 +148,6 @@ if __name__ == "__main__":
     # 创建应用
     app = QApplication(sys.argv)
     slug_token_pairs = {}
-    tag_slug = "nfl"
-    game_date = "2025-01-05"
-    events = query_events(tag_slug, game_date)
-    # slug = "will-bitcoin-hit-100k-again-in-2024-dec-23"
-    # events = query_events_by_slug(slug)
     for event in events:
         for market in event["markets"]:
             # token pair str in "[\"token1, token2\"]"
@@ -158,6 +167,7 @@ if __name__ == "__main__":
             token_pair = json.loads(market["clobTokenIds"])
             token_slug[token_pair[0]] = slug
             token_slug[token_pair[1]] = slug
+    logger.info(f"token_slug: {token_slug}")
     bookparams = [BookParams(token, SELL) for token in token_slug.keys()]
     thread = threading.Thread(
         target=buy_in_thread, args=(token_slug, bookparams, qt_window)

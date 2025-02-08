@@ -28,42 +28,47 @@ def quater_pct_to_sec(quater, pct):
 
 
 def process_one(game_id):
-    try:
-        # filter last quater plays, including overtime
-        play_by_play = playbyplayv2.PlayByPlayV2(
-            game_id=game_id, timeout=5
-        ).get_data_frames()[0]
-        play_by_play = play_by_play[play_by_play["SCOREMARGIN"].notna()]
-        last_quater = int(play_by_play["PERIOD"].max())
-        # convert PCTIMESTRING to seconds from the start of the game
-        play_by_play["TIMEPLAYED"] = play_by_play.apply(
-            lambda x: quater_pct_to_sec(x["PERIOD"], x["PCTIMESTRING"]), axis=1
-        )
-        # get socre margin of every second in last 120 seconds
-        result = {"GAME_ID": game_id}
-        # get Q3 ~ end of the game by seconds
-        # assuming 2 OTs at most
-        for i in range(2 * 12 * 60, 2880 + (last_quater - 4) * 5 * 60 + 1):
-            result[i] = play_by_play[play_by_play["TIMEPLAYED"] <= i].iloc[-1][
-                "SCOREMARGIN"
-            ]
-            if result[i] == "TIE":
-                result[i] = 0
-        return result, game_id
-    except Exception as e:
-        logger.info(f"Error processing game {game_id}: {e}")
-        return False, game_id
+    error = None
+    for _ in range(3):
+        try:
+            # filter last quater plays, including overtime
+            play_by_play = playbyplayv2.PlayByPlayV2(
+                game_id=game_id, timeout=5
+            ).get_data_frames()[0]
+            play_by_play = play_by_play[play_by_play["SCOREMARGIN"].notna()]
+            last_quater = int(play_by_play["PERIOD"].max())
+            # convert PCTIMESTRING to seconds from the start of the game
+            play_by_play["TIMEPLAYED"] = play_by_play.apply(
+                lambda x: quater_pct_to_sec(x["PERIOD"], x["PCTIMESTRING"]), axis=1
+            )
+            # get socre margin of every second in last 120 seconds
+            result = {"GAME_ID": game_id}
+            # get Q3 ~ end of the game by seconds
+            # assuming 2 OTs at most
+            for i in range(2 * 12 * 60, 2880 + (last_quater - 4) * 5 * 60 + 1):
+                result[i] = play_by_play[play_by_play["TIMEPLAYED"] <= i].iloc[-1][
+                    "SCOREMARGIN"
+                ]
+                if result[i] == "TIE":
+                    result[i] = 0
+            return result, game_id
+        except Exception as e:
+            error = e
+            pass
+    logger.info(f"failed to process game {game_id} error {error}")
+    return False, game_id
 
 
 try:
     with open("failed_games.txt", "r") as f:
         his_failed_games = f.read().split("\n")
+        his_failed_games = [x for x in his_failed_games if x != ""]
 except Exception as e:
     logger.info(f"Open file failed with {e}")
     his_failed_games = []
 
 # 获取2020赛季至今的比赛列表
-years = list(range(15, 24))
+years = list(range(10, 15))
 # 初始化存储结果
 new_failed_games = []
 
@@ -88,7 +93,8 @@ for year in years:
     # # 提取需要的字段
     # games = games[['GAME_ID', 'GAME_DATE', 'MATCHUP', 'WL', 'PTS', 'PLUS_MINUS']]
     game_ids = list(set(games["GAME_ID"].tolist()))
-    game_ids = list(set(game_ids).intersection(set(his_failed_games)))
+    if len(his_failed_games) > 0:
+        game_ids = list(set(game_ids).intersection(set(his_failed_games)))
     # process failed games
     logger.info(f"season {season} has {len(game_ids)} games un processed")
     # use ThreadPoolExecutor and tqdm to show progress bar
