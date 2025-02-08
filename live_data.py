@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # )
 
 price_limit = 0.998
-sell_th = 0.95
-game_date = "2025-02-06"
+sell_th = 0.1  # sell when price decline more then 0.1$
+game_date = "2025-02-07"
 logger_file = f"logs/live_data_{game_date}_{time.time()}.log"
 logging.basicConfig(
     level=logging.INFO,
@@ -39,27 +39,47 @@ logging.basicConfig(
     ],
 )
 balance_split = 4
-token_shares = Manager().dict()
+manager = Manager()
+token_infos = manager.dict()
 
 
 def sell_when_too_low():
+    global token_infos
     while True:
-        if len(token_shares) == 0:
+        if len(token_infos) == 0:
+            logger.info("no token to sell, sleep for 60 seconds")
             time.sleep(60)
             continue
-        bookparams = [BookParams(token, SELL) for token in list(token_shares.keys())]
-        prices = client.get_prices(bookparams)
-        for token in token_shares:
-            # shares = token_shares[token]
+        bookparams = [BookParams(token, SELL) for token in list(token_infos.keys())]
+        try:
+            prices = client.get_prices(bookparams)
+        except Exception as e:
+            logger.error(f"error when get prices: {e}")
+            continue
+        for token in token_infos:
+            shares = round(token_infos[token]["size"], 2)
+            ori_price = token_infos[token]["price"]
             if token not in prices:
                 logger.warning(f"token {token} not in prices")
                 continue
-            # price = float(prices[token][SELL])
-            # if price <= sell_th:
-            # res = client.create_and_post_order(
-            #     OrderArgs(price=0.99, size=410 , side=SELL, token_id=token_id)
-            # )
-            # print(res)
+            price = float(prices[token][SELL])
+            logger.info(
+                f"{token} shares: {shares}, ori_price: {ori_price}, current price: {price}"  # noqa
+            )
+            if price - ori_price < -sell_th:
+                logger.warning(
+                    f"price too low, sell {token} at {price} for {shares} shares !!!!"
+                )
+            #     # sell all shares, to make sure sell all shares, set price to sell_th - 0.5  # noqa
+            #     try:
+            #         market_order = client.create_market_order(
+            #             MarketOrderArgs(token_id=token, side=SELL, )
+            #         )
+            #         logger.info(f"sell {token} at {sell_th} for {shares} shares, sell res: {res}")  # noqa
+            #         token_infos.pop(token)
+            #     except Exception as e:
+            #         logger.error(f"sell {token} fail: {e}")
+
             # orderid = res["orderID"]
             # res = client.get_order("0x7849dae5bfcdcc59ea9c7440a9782089e1538b7e9248b74eba58771b151d6e74")  # noqa
             # print(res)
@@ -69,12 +89,14 @@ def sell_when_too_low():
 def buy_one_game(  # noqa
     game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindow
 ):
+    global token_infos
     home_team = gameid_token[game_id]["homeTeam"]["team"]
     away_team = gameid_token[game_id]["awayTeam"]["team"]
     home_token = gameid_token[game_id]["homeTeam"]["outcome_token_id"]
     away_token = gameid_token[game_id]["awayTeam"]["outcome_token_id"]
     match_up = f"{away_team}_{home_team}"  # noqa
     bought_str = ""
+    fake_bought_str = ""  # some test
     while True:
         to_check = False
         try:
@@ -87,13 +109,13 @@ def buy_one_game(  # noqa
         except ReadTimeout as e:
             logger.info(f"query {away_team} VS {home_team} timeout {e}")
             continue
-        except JSONDecodeError as e:
+        except JSONDecodeError:
             logger.info(
-                f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes"
+                f"game {away_team} VS {home_team} not started, sleep for 5 minutes"
             )  # noqa
             qt_window.print(
                 match_up,
-                f"game {away_team} VS {home_team} not started {e}, sleep for 5 minutes",
+                f"game {away_team} VS {home_team} not started, sleep for 5 minutes",
             )  # noqa
             time.sleep(300)
             continue
@@ -130,19 +152,42 @@ def buy_one_game(  # noqa
             team_to_check = (
                 away_team if away_team_score > home_team_score else home_team
             )  # noqa
+            if flip_rate < 0.05 and fake_bought_str == "":
+                bought, price_pair, size = buy_in(
+                    tokens=[token_to_check],
+                    price_threshold=1.0,
+                    price_limit=0.0,
+                    balance_split=balance_split,
+                )
+                assert not bought, f"fake buy {team_to_check} fail"
+                fake_bought_str = " ".join(
+                    [
+                        f"fake bought {team_to_check} for {size} shares",
+                        f"at {price_pair} with flip_rate {flip_rate}",
+                        f"{status_text}",
+                        f"{away_team_score} - {home_team_score}",
+                    ]
+                )
+                logger.info(fake_bought_str)
+
             if flip_rate < 0.005 and bought_str == "":
                 try:
-                    _, price_pair = buy_in(
+                    bought, price_pair, size = buy_in(
                         tokens=[token_to_check],
                         price_threshold=0.7,
                         price_limit=price_limit,
                         balance_split=balance_split,
                     )
-                    bought_str = f"bought {team_to_check} at {price_pair} with flip_rate {flip_rate} {status_text}"  # noqa
+                    bought_str = f"bought {team_to_check} for {size} shares at {price_pair} with flip_rate {flip_rate} {status_text}"  # noqa
+                    if bought:
+                        token_infos[token_to_check] = manager.dict()
+                        token_infos[token_to_check]["size"] = size
+                        token_infos[token_to_check]["price"] = price_pair[0]
+                    else:
+                        bought_str = f"not {bought_str}"
                     logger.info(bought_str)
                 except Exception as e:
                     logger.info(f"buying {away_team} vs. {home_team} fail: {e}")
-        info_str = f"{info_str}"
         qt_window.print(match_up, info_str + f" {bought_str}")
         logger.info(info_str)
         # TODO: check Q4 END
@@ -227,7 +272,9 @@ if __name__ == "__main__":  # noqa
         )
         threads.append(thread)
         thread.start()
-
+    sell_thread = threading.Thread(target=sell_when_too_low)
+    sell_thread.start()
+    threads.append(sell_thread)
     app.exec()
     for thread in threads:
         thread.join()
