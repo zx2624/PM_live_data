@@ -22,11 +22,13 @@ from tools.utils import (
     client,
     get_team_token,
     get_time_played,
+    sell_with_market_price,
     setup_logger,
 )
 
 price_limit = 0.998
-sell_th = 0.1  # sell when price decline more then 0.1$
+loss_sell_th = 0.2  # sell when price decline more then 0.2$
+profit_sell_th = 0.008  # sell when price increase more then 0.008$
 game_date = "2025-02-08"
 balance_split = 4
 manager = Manager()
@@ -51,31 +53,26 @@ def sell_when_too_low():
         for token in token_infos:
             shares = round(token_infos[token]["size"], 2)
             ori_price = token_infos[token]["price"]
+            team = token_infos[token]["team"]
             if token not in prices:
                 logger.warning(f"token {token} not in prices")
                 continue
             price = float(prices[token][SELL])
             logger.info(
-                f"{token} shares: {shares}, ori_price: {ori_price}, current price: {price}"  # noqa
+                f"{team} {token} shares: {shares}, ori_price: {ori_price}, current price: {price}"  # noqa
             )
-            if price - ori_price < -sell_th:
+            if ori_price - price > loss_sell_th:
                 logger.warning(
-                    f"price too low, sell {token} at {price} for {shares} shares !!!!"
+                    f"price too low, sell {team} {token} at {price} for {shares} shares !!!!"  # noqa
                 )
-            #     # sell all shares, to make sure sell all shares, set price to sell_th - 0.5  # noqa
-            #     try:
-            #         market_order = client.create_market_order(
-            #             MarketOrderArgs(token_id=token, side=SELL, )
-            #         )
-            #         logger.info(f"sell {token} at {sell_th} for {shares} shares, sell res: {res}")  # noqa
-            #         token_infos.pop(token)
-            #     except Exception as e:
-            #         logger.error(f"sell {token} fail: {e}")
-
-            # orderid = res["orderID"]
-            # res = client.get_order("0x7849dae5bfcdcc59ea9c7440a9782089e1538b7e9248b74eba58771b151d6e74")  # noqa
-            # print(res)
-            # size_matched = res["size_matched"]
+                sell_with_market_price(token=token, size=shares, logger=logger)
+                token_infos.pop(token)
+            if price - ori_price > profit_sell_th:
+                logger.info(
+                    f"enough profit, sell {team} {token} at {price} for {shares} shares"
+                )
+                sell_with_market_price(token=token, size=shares, logger=logger)
+                token_infos.pop(token)
 
 
 def buy_one_game(  # noqa
@@ -168,6 +165,7 @@ def buy_one_game(  # noqa
                 logger.info(fake_bought_str)
 
             if flip_rate < 0.005 and bought_str == "":
+                logger.info(info_str)
                 try:
                     bought, price_pair, size = buy_in(
                         tokens=[token_to_check],
@@ -181,6 +179,7 @@ def buy_one_game(  # noqa
                         token_infos[token_to_check] = manager.dict()
                         token_infos[token_to_check]["size"] = size
                         token_infos[token_to_check]["price"] = price_pair[0]
+                        token_infos[token_to_check]["team"] = team_to_check
                     else:
                         bought_str = f"not {bought_str}"
                     logger.info(bought_str)
