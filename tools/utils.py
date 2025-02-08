@@ -208,7 +208,7 @@ def buy(token: str, price, price_threshold=0.9, price_limit=1.0, balance_split=1
 def buy_in(
     tokens, price_threshold=0.9, price_limit=1.0, spread_th=None, balance_split=1.0
 ):
-    current_balance = (balance - 0.5) / balance_split
+    current_balance = (balance * 0.99) / balance_split
     price_pair = []
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
@@ -218,11 +218,11 @@ def buy_in(
                 spread = float(client.get_spread(token)["spread"])
                 if spread > spread_th:
                     logger.info(f"spread is {spread}, skip")
-                    return False, price_pair
+                    return False, price_pair, 0
             tick_size = float(client.get_tick_size(token))
             logger.info(f"tick_size is {tick_size}")
             buy_price = min(price + 2 * tick_size, 1.0 - tick_size)
-            size = current_balance / buy_price
+            size = round(current_balance / buy_price, 2)
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
             try:
                 res = client.create_and_post_order(
@@ -239,7 +239,7 @@ def buy_in(
                     logger.error("not enough balance, pretend I bought it")
                     order_book = client.get_order_book(token)
                     logger.info(f"{token} order_book: {order_book}")
-                    return True, price_pair
+                    return False, price_pair, size
                 else:
                     raise e
 
@@ -250,5 +250,5 @@ def buy_in(
             time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             with open("assets/buy_in.log", "a") as f:
                 f.write(f"{token} {buy_price} {size} @{time_str}\n")
-            return True, price_pair
-    return False, price_pair
+            return True, price_pair, size
+    return False, price_pair, 0
