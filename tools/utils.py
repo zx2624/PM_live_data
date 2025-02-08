@@ -2,12 +2,19 @@ import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import AssetType, BalanceAllowanceParams, OrderArgs
+from py_clob_client.clob_types import (
+    AssetType,
+    BalanceAllowanceParams,
+    MarketOrderArgs,
+    OrderArgs,
+    OrderType,
+)
 from py_clob_client.exceptions import PolyApiException
 from py_clob_client.order_builder.constants import BUY, SELL
 
@@ -175,12 +182,15 @@ def calculate_row_product(row, time_played):
 
 
 def check_flip(time_played, score_diff, logger: logging.Logger = default_logger):
+    if time_played >= 2880 - 10:
+        logger.info("too close to the end of the game, skip")
+        return 100
     if int(score_diff) == 0:
         return 100
     time_played = f"{time_played}"
     data_over_score_diff = df[(abs(df[time_played]) == abs(score_diff))].copy()  #
     # only consider to check flip rate when there are more than 100 games
-    if len(data_over_score_diff) < 100:
+    if len(data_over_score_diff) < 500:
         logger.info(
             f"only {len(data_over_score_diff)} games, not enough to check flip rate"
         )
@@ -199,6 +209,30 @@ def check_flip(time_played, score_diff, logger: logging.Logger = default_logger)
         f"fliped_rate: {fliped_rate}, {len(fliped_games)} / {len(data_over_score_diff)}"
     )
     return fliped_rate
+
+
+def sell_with_market_price(
+    token: str, size: float, logger: logging.Logger = default_logger
+):
+    while True:
+        logger.info(f"selling {token} with {size} shares")
+        try:
+            order = client.create_market_order(
+                MarketOrderArgs(
+                    token_id=token,
+                    amount=size,
+                    side=SELL,
+                )
+            )
+            resp = client.post_order(order, orderType=OrderType.FOK)
+            logger.info(f"sell {token} resp: {resp}")
+        except PolyApiException as e:
+            if "not enough balance" in str(e):
+                logger.warning(f"sold out, with {e}")
+                break
+        except Exception as e:
+            logger.error(f"sell {token} error: {e}")
+            time.sleep(0.05)
 
 
 def buy(
