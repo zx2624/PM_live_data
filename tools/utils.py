@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -12,8 +13,32 @@ from py_clob_client.order_builder.constants import BUY, SELL
 
 from agents.polymarket.gamma import GammaMarketClient as Gamma
 
-logger = logging.getLogger(__name__)
 
+def setup_logger(name, log_file=None):
+    log_format = (
+        "%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s"
+    )
+    formatter = logging.Formatter(log_format)
+    # 创建一个Logger
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    # consol handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    if log_file:
+        if not os.path.exists(os.path.dirname(log_file)):
+            os.makedirs(os.path.dirname(log_file))
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+
+
+default_logger = setup_logger("default_logger")
 host: str = "https://clob.polymarket.com"
 chain_id: int = 137
 
@@ -25,7 +50,6 @@ client = ClobClient(
 )  #
 creds = client.create_or_derive_api_creds()
 client.set_api_creds(creds)
-logger.info(creds)
 balance = client.get_balance_allowance(
     params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
 )["balance"]
@@ -97,7 +121,6 @@ def get_team_token(game_date: str, tag_slug) -> dict:
         assert len(event["series"]) == 1
         if game_date in event["slug"]:
             filtered_events.append(event)
-    logger.info(f"len(events): {len(filtered_events)}")
 
     outcome_tokens = {}
     for event in filtered_events:
@@ -151,7 +174,7 @@ def calculate_row_product(row, time_played):
     return row[time_played] * row[last_valid]
 
 
-def check_flip(time_played, score_diff):
+def check_flip(time_played, score_diff, logger: logging.Logger = default_logger):
     if int(score_diff) == 0:
         return 100
     time_played = f"{time_played}"
@@ -178,7 +201,14 @@ def check_flip(time_played, score_diff):
     return fliped_rate
 
 
-def buy(token: str, price, price_threshold=0.9, price_limit=1.0, balance_split=1.0):
+def buy(
+    token: str,
+    price,
+    price_threshold=0.9,
+    price_limit=1.0,
+    balance_split=1.0,
+    logger: logging.Logger = default_logger,
+):
     current_balance = (balance - 0.5) / balance_split
     size = current_balance / price
     if price >= price_threshold and price < 1.0 and price <= price_limit:
@@ -206,7 +236,12 @@ def buy(token: str, price, price_threshold=0.9, price_limit=1.0, balance_split=1
 
 
 def buy_in(
-    tokens, price_threshold=0.9, price_limit=1.0, spread_th=None, balance_split=1.0
+    tokens,
+    price_threshold=0.9,
+    price_limit=1.0,
+    spread_th=None,
+    balance_split=1.0,
+    logger: logging.Logger = default_logger,
 ):
     current_balance = (balance * 0.99) / balance_split
     price_pair = []

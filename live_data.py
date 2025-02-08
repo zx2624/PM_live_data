@@ -1,6 +1,5 @@
 # Query nba.live.endpoints.scoreboard and  list games in localTimeZone
 import json
-import logging
 import sys
 import threading
 import time
@@ -17,27 +16,18 @@ from nba_api.live.nba.endpoints import boxscore
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.static import teams
 from tools.qt_printer import ThreadDisplayWindow
-from tools.utils import buy_in, check_flip, client, get_team_token, get_time_played
-
-logger = logging.getLogger(__name__)
-# # logger with file line and time
-# logging.basicConfig(
-#     level=logging.INFO,
-#     format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
-# )
+from tools.utils import (
+    buy_in,
+    check_flip,
+    client,
+    get_team_token,
+    get_time_played,
+    setup_logger,
+)
 
 price_limit = 0.998
 sell_th = 0.1  # sell when price decline more then 0.1$
-game_date = "2025-02-07"
-logger_file = f"logs/live_data_{game_date}_{time.time()}.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(logger_file, mode="w"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
+game_date = "2025-02-08"
 balance_split = 4
 manager = Manager()
 token_infos = manager.dict()
@@ -45,6 +35,8 @@ token_infos = manager.dict()
 
 def sell_when_too_low():
     global token_infos
+    logfile = f"logs/{game_date}/sell_when_too_low.log"
+    logger = setup_logger("sell_when_too_low", logfile)
     while True:
         if len(token_infos) == 0:
             logger.info("no token to sell, sleep for 60 seconds")
@@ -95,6 +87,8 @@ def buy_one_game(  # noqa
     home_token = gameid_token[game_id]["homeTeam"]["outcome_token_id"]
     away_token = gameid_token[game_id]["awayTeam"]["outcome_token_id"]
     match_up = f"{away_team}_{home_team}"  # noqa
+    logfile = f"logs/{game_date}/{match_up}.log"
+    logger = setup_logger(match_up, logfile)
     bought_str = ""
     fake_bought_str = ""  # some test
     while True:
@@ -144,7 +138,9 @@ def buy_one_game(  # noqa
             except Exception as e:
                 logger.info(f"error: {e} with {status_text} {status}")
                 continue
-            flip_rate = check_flip(time_played, away_team_score - home_team_score)
+            flip_rate = check_flip(
+                time_played, away_team_score - home_team_score, logger=logger
+            )
             info_str += f" flip rate: {flip_rate}"
             token_to_check = (
                 away_token if away_team_score > home_team_score else home_token
@@ -158,6 +154,7 @@ def buy_one_game(  # noqa
                     price_threshold=1.0,
                     price_limit=0.0,
                     balance_split=balance_split,
+                    logger=logger,
                 )
                 assert not bought, f"fake buy {team_to_check} fail"
                 fake_bought_str = " ".join(
@@ -177,6 +174,7 @@ def buy_one_game(  # noqa
                         price_threshold=0.7,
                         price_limit=price_limit,
                         balance_split=balance_split,
+                        logger=logger,
                     )
                     bought_str = f"bought {team_to_check} for {size} shares at {price_pair} with flip_rate {flip_rate} {status_text}"  # noqa
                     if bought:
@@ -202,13 +200,9 @@ def buy_one_game(  # noqa
     logger.info(f"{away_team} vs. {home_team} finished")
 
 
-def kill_window():
-    logger.info("===========kill window========")
-    time.sleep(1)
-    # sys.exit()
-
-
 if __name__ == "__main__":  # noqa
+    logfile = f"logs/{game_date}/main.log"
+    logger = setup_logger("main", logfile)
     import signal
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
