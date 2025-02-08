@@ -30,13 +30,15 @@ price_limit = 0.998
 loss_sell_th = 0.2  # sell when price decline more then 0.2$
 profit_sell_th = 0.008  # sell when price increase more then 0.008$
 game_date = "2025-02-08"
-balance_split = 4
+balance_split = 5
 manager = Manager()
 token_infos = manager.dict()
+fake_token_infos = manager.dict()
 
 
 def sell_when_too_low():
     global token_infos
+    global fake_token_infos
     logfile = f"logs/{game_date}/sell_when_too_low.log"
     logger = setup_logger("sell_when_too_low", logfile)
     while True:
@@ -48,7 +50,9 @@ def sell_when_too_low():
         try:
             prices = client.get_prices(bookparams)
         except Exception as e:
-            logger.error(f"error when get prices: {e}")
+            logger.error(
+                f"==================== error when get prices: {e} ====================="
+            )  # noqa
             continue
         for token in token_infos:
             shares = round(token_infos[token]["size"], 2)
@@ -73,12 +77,28 @@ def sell_when_too_low():
                 )
                 sell_with_market_price(token=token, size=shares, logger=logger)
                 token_infos.pop(token)
+        for token in fake_token_infos:
+            ori_price = fake_token_infos[token]["price"]
+            team = fake_token_infos[token]["team"]
+            if token not in prices:
+                logger.warning(f"token {token} not in prices")
+                continue
+            price = float(prices[token][SELL])
+            logger.info(
+                f"{team} {token} fake ori_price: {ori_price}, current price: {price}"  # noqa
+            )
+            if ori_price - price > loss_sell_th:
+                logger.warning(
+                    f"fake price too low, sell {team} {token} at {price} for {shares} shares !!!!"  # noqa
+                )
+                fake_token_infos.pop(token)
 
 
 def buy_one_game(  # noqa
     game_id: str, gameid_token: Dict, qt_window: ThreadDisplayWindow
 ):
     global token_infos
+    global fake_token_infos
     home_team = gameid_token[game_id]["homeTeam"]["team"]
     away_team = gameid_token[game_id]["awayTeam"]["team"]
     home_token = gameid_token[game_id]["homeTeam"]["outcome_token_id"]
@@ -163,6 +183,10 @@ def buy_one_game(  # noqa
                     ]
                 )
                 logger.info(fake_bought_str)
+                fake_token_infos[token_to_check] = manager.dict()
+                fake_token_infos[token_to_check]["price"] = price_pair[0]
+                fake_token_infos[token_to_check]["size"] = size
+                fake_token_infos[token_to_check]["team"] = team_to_check
 
             if flip_rate < 0.005 and bought_str == "":
                 logger.info(info_str)
