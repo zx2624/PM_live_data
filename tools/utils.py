@@ -3,9 +3,7 @@ import logging
 import os
 import sys
 import time
-from pathlib import Path
 
-import pandas as pd
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import (
@@ -48,23 +46,24 @@ def setup_logger(name, log_file=None):
 default_logger = setup_logger("default_logger")
 host: str = "https://clob.polymarket.com"
 chain_id: int = 137
-
+default_logger.info("loading env")
 load_dotenv()
 key = os.getenv("POLYGON_WALLET_PRIVATE_KEY")
 funder = os.getenv("FUNDER")
+default_logger.info("creating client")
 client = ClobClient(
     host, key=key, chain_id=chain_id, signature_type=1, funder=funder
 )  #
+default_logger.info("client created")
 creds = client.create_or_derive_api_creds()
 client.set_api_creds(creds)
 balance = client.get_balance_allowance(
     params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
 )["balance"]
 balance = float(balance) / 1e6
-# load csv
-csv_path = Path(os.path.abspath(__file__)).parent.parent / "assets/fromq3"
-csv_files = list(csv_path.glob("*.csv"))
-df = pd.concat([pd.read_csv(file) for file in csv_files])
+default_logger.info(f"balance: {balance}")
+default_logger.info("loading csv")
+
 
 quater_map = {
     "Q3": 3,
@@ -181,7 +180,7 @@ def calculate_row_product(row, time_played):
     return row[time_played] * row[last_valid]
 
 
-def check_flip(time_played, score_diff, logger: logging.Logger = default_logger):
+def check_flip(time_played, score_diff, df, logger: logging.Logger = default_logger):
     if time_played >= 2880 - 10:
         logger.info("too close to the end of the game, skip")
         return 100
