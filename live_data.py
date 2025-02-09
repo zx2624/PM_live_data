@@ -44,11 +44,14 @@ def sell_when_too_low():
     logfile = f"logs/{game_date}/sell_when_too_low.log"
     logger = setup_logger("sell_when_too_low", logfile)
     while True:
-        if len(token_infos) == 0:
+        if len(token_infos) == 0 or len(fake_token_infos) == 0:
             logger.info("no token to sell, sleep for 60 seconds")
             time.sleep(60)
             continue
-        bookparams = [BookParams(token, side) for token in list(token_infos.keys())]
+        bookparams = [
+            BookParams(token, side)
+            for token in list(token_infos.keys()) + list(fake_token_infos.keys())
+        ]
         try:
             prices = client.get_prices(bookparams)
         except Exception as e:
@@ -217,10 +220,14 @@ def buy_one_game(  # noqa
         if info["gameStatus"] == 3:
             logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
             logger.info(f"score: {away_team_score} - {home_team_score}")
-            # try:
-            #     buy_in(tokens=tokens, price_threshold=0.8, price_limit=price_limit)
-            # except Exception as e:
-            #     logger.info(f"buy in finished game fail: {e}")
+            # sleep a while, in case there is a sell
+            time.sleep(10)
+            # pop possible token_infos
+            for token in [away_token, home_token]:
+                if token in token_infos:
+                    token_infos.pop(token)
+                if token in fake_token_infos:
+                    fake_token_infos.pop(token)
             break
     logger.info(f"{away_team} vs. {home_team} finished")
 
