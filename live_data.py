@@ -8,7 +8,7 @@ from multiprocessing import Manager
 from typing import Dict
 
 from py_clob_client.clob_types import BookParams
-from py_clob_client.order_builder.constants import SELL
+from py_clob_client.order_builder.constants import BUY
 from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
 
@@ -39,6 +39,8 @@ fake_token_infos = manager.dict()
 def sell_when_too_low():
     global token_infos
     global fake_token_infos
+    # use BUY side to get prices, since we are selling
+    side = BUY
     logfile = f"logs/{game_date}/sell_when_too_low.log"
     logger = setup_logger("sell_when_too_low", logfile)
     while True:
@@ -46,7 +48,7 @@ def sell_when_too_low():
             logger.info("no token to sell, sleep for 60 seconds")
             time.sleep(60)
             continue
-        bookparams = [BookParams(token, SELL) for token in list(token_infos.keys())]
+        bookparams = [BookParams(token, side) for token in list(token_infos.keys())]
         try:
             prices = client.get_prices(bookparams)
         except Exception as e:
@@ -61,7 +63,7 @@ def sell_when_too_low():
             if token not in prices:
                 logger.warning(f"token {token} not in prices")
                 continue
-            price = float(prices[token][SELL])
+            price = float(prices[token][side])
             logger.info(
                 f"{team} {token} shares: {shares}, ori_price: {ori_price}, current price: {price}"  # noqa
             )
@@ -83,7 +85,7 @@ def sell_when_too_low():
             if token not in prices:
                 logger.warning(f"token {token} not in prices")
                 continue
-            price = float(prices[token][SELL])
+            price = float(prices[token][side])
             logger.info(
                 f"{team} {token} fake ori_price: {ori_price}, current price: {price}"  # noqa
             )
