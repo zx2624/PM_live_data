@@ -12,7 +12,7 @@ from typing import Dict, List
 import certifi
 import pandas as pd
 from py_clob_client.clob_types import BookParams
-from py_clob_client.order_builder.constants import BUY
+from py_clob_client.order_builder.constants import BUY, SELL
 from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
 
@@ -31,6 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
+game_date = "2025-02-10"
+price_limit = 0.998
+loss_sell_th = 0.2
+profit_sell_th = 0.008
+buy_balance = 106.0
 
 
 class NBATrader:
@@ -40,32 +45,32 @@ class NBATrader:
         price_limit: float = 0.998,
         loss_sell_th: float = 0.2,
         profit_sell_th: float = 0.008,
-        balance_split: int = 5,
+        buy_balance: float = 0.0,
     ):
         self.logger = setup_logger("main", f"logs/{game_date}/main.log")
         self.game_date = game_date
         self.price_limit = price_limit
         self.loss_sell_th = loss_sell_th
         self.profit_sell_th = profit_sell_th
-        self.balance_split = balance_split
+        self.buy_balance = buy_balance
 
         self.manager = Manager()
         self.token_infos = self.manager.dict()
         self.fake_token_infos = self.manager.dict()
         self.gameid_token: Dict[str, Dict] = {}
         # load csv
-        self.logger.info(f"loading csv file from {os.path.dirname(__file__)}")
         csv_file = (
             Path(os.path.abspath(__file__)).parent / "assets/fromq3/fromq3_merged.csv"
         )
+        self.logger.info(f"loading csv file from {csv_file}")
         self.df = pd.read_csv(csv_file)
         self.qt_window = None
         self.threads: List[threading.Thread] = []
 
-    def sell_when_too_low(self):
+    def price_monitor(self):
         side = BUY
-        logfile = f"logs/{self.game_date}/sell_when_too_low.log"
-        logger = setup_logger("sell_when_too_low", logfile)
+        logfile = f"logs/{self.game_date}/price_monitor.log"
+        logger = setup_logger("price_monitor", logfile)
 
         while True:
             if len(self.token_infos) == 0 and len(self.fake_token_infos) == 0:
@@ -85,8 +90,11 @@ class NBATrader:
                 logger.error(f"error when get prices: {e}")
                 continue
 
-            self._process_real_tokens(prices, side, logger)
-            self._process_fake_tokens(prices, side, logger)
+            try:
+                self._process_real_tokens(prices, side, logger)
+                self._process_fake_tokens(prices, side, logger)
+            except Exception as e:
+                logger.error(f"error when process tokens: {e}")
 
     def _process_real_tokens(self, prices, side, logger: logging.Logger):
         for token in list(self.token_infos.keys()):
@@ -108,13 +116,15 @@ class NBATrader:
                     f"price too low, sell {team} {token} at {price} for {shares} shares"
                 )
                 sell_with_market_price(token=token, size=shares, logger=logger)
-                self.token_infos.pop(token)
+                if token in self.token_infos:
+                    self.token_infos.pop(token)
             elif price - ori_price > self.profit_sell_th:
                 logger.info(
                     f"enough profit, sell {team} {token} at {price} for {shares} shares"
                 )
                 sell_with_market_price(token=token, size=shares, logger=logger)
-                self.token_infos.pop(token)
+                if token in self.token_infos:
+                    self.token_infos.pop(token)
 
     def _process_fake_tokens(self, prices, side, logger: logging.Logger):
         for token in list(self.fake_token_infos.keys()):
@@ -132,7 +142,8 @@ class NBATrader:
 
             if ori_price - price > self.loss_sell_th:
                 logger.warning(f"fake price too low, sell {team} {token} at {price}")
-                self.fake_token_infos.pop(token)
+                if token in self.fake_token_infos:
+                    self.fake_token_infos.pop(token)
 
     def buy_one_game(self, game_id: str):
         home_team = self.gameid_token[game_id]["homeTeam"]["team"]
@@ -155,6 +166,10 @@ class NBATrader:
             status_text = game_info["gameStatusText"]
             if self._is_early_game(status_text):
                 logger.info(f"{away_team} vs. {home_team} {status_text}, sleeping")
+                if self.qt_window:
+                    self.qt_window.print(
+                        match_up, f"{away_team} vs. {home_team} {status_text}, sleeping"
+                    )
                 time.sleep(60)
                 continue
 
@@ -230,9 +245,11 @@ class NBATrader:
             time_played = get_time_played(status_text)
         except Exception as e:
             logger.info(f"error: {e} with {status_text}")
-            return
+            return bought_str, fake_bought_str
 
-        flip_rate = check_flip(time_played, away_score - home_score, logger=logger)
+        flip_rate = check_flip(
+            time_played, away_score - home_score, df=self.df, logger=logger
+        )
         leading_team = away_team if away_score > home_score else home_team
         leading_token = away_token if away_score > home_score else home_token
 
@@ -287,7 +304,10 @@ class NBATrader:
         处理比赛结束时的清理工作
         """
         logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
-
+        if self.qt_window:
+            self.qt_window.print(
+                f"{away_team}_{home_team}", f"{away_team} vs. {home_team} finished"
+            )
         # 等待一段时间，以防还有未完成的卖出操作
         time.sleep(10)
 
@@ -314,31 +334,27 @@ class NBATrader:
         """
         尝试进行模拟购买操作
         """
-        if flip_rate < 0.05 and not fake_bought_str:
-            bought, price_pair, size = buy_in(
-                tokens=[leading_token],
-                price_threshold=1.0,
-                price_limit=0.0,
-                balance_split=self.balance_split,
-                logger=logger,
-            )
-
-            assert not bought, "Fake buy, must fail !!!"
-            fake_bought_str = " ".join(
-                [
-                    f"fake bought {leading_team} for {size} shares",
-                    f"at {price_pair} with flip_rate {flip_rate}",
-                    f"{status_text}",
-                    f"{away_score} - {home_score}",
-                ]
-            )
-            logger.info(fake_bought_str)
-
-            # 记录模拟购买信息
-            self.fake_token_infos[leading_token] = self.manager.dict()
-            self.fake_token_infos[leading_token]["price"] = price_pair[0]
-            self.fake_token_infos[leading_token]["size"] = size
-            self.fake_token_infos[leading_token]["team"] = leading_team
+        if flip_rate < 0.05 and fake_bought_str == "":
+            try:
+                price = float(client.get_price(leading_token, SELL)["price"])
+                order_book = client.get_order_book(leading_token)
+                logger.info(f"order book: {order_book}")
+                fake_bought_str = " ".join(
+                    [
+                        f"fake bought {leading_team}",
+                        f"at {price} with flip_rate {flip_rate}",
+                        f"{status_text}",
+                        f"{away_score} - {home_score}",
+                    ]
+                )
+                logger.info(fake_bought_str)
+                # 记录模拟购买信息
+                self.fake_token_infos[leading_token] = self.manager.dict()
+                self.fake_token_infos[leading_token]["price"] = price
+                self.fake_token_infos[leading_token]["size"] = 0
+                self.fake_token_infos[leading_token]["team"] = leading_team
+            except Exception:
+                logger.info("error when get order book or price")
         return fake_bought_str
 
     def _try_real_buy(
@@ -353,13 +369,13 @@ class NBATrader:
         """
         尝试进行实际购买操作
         """
-        if flip_rate < 0.005 and not bought_str:
+        if flip_rate < 0.005 and bought_str == "":
             try:
                 bought, price_pair, size = buy_in(
                     tokens=[leading_token],
                     price_threshold=0.7,
                     price_limit=self.price_limit,
-                    balance_split=self.balance_split,
+                    buy_balance=self.buy_balance,
                     logger=logger,
                 )
 
@@ -385,7 +401,7 @@ class NBATrader:
 
             except Exception as e:
                 logger.info(f"buying {leading_team} fail: {e}")
-            return bought_str
+        return bought_str
 
     def _process_game_data(self, df, team_token):
         df = df[["GAME_ID", "HOME_TEAM_ID", "VISITOR_TEAM_ID"]]
@@ -417,7 +433,7 @@ class NBATrader:
         with open(f"assets/gameid_infos/gameid_token_{self.game_date}.json", "w") as f:
             json.dump(self.gameid_token, f, indent=4)
         self.logger.info(
-            f"price_limit {self.price_limit}, balance_split {self.balance_split}"
+            f"price_limit {self.price_limit}, buy_balance {self.buy_balance}"
         )
 
     def _setup_qt_window(self):
@@ -442,7 +458,7 @@ class NBATrader:
             thread.start()
 
         # Start selling monitoring thread
-        sell_thread = threading.Thread(target=self.sell_when_too_low)
+        sell_thread = threading.Thread(target=self.price_monitor)
         sell_thread.start()
         self.threads.append(sell_thread)
         app.exec()
@@ -460,10 +476,10 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     trader = NBATrader(
-        game_date="2025-02-09",
-        price_limit=0.998,
-        loss_sell_th=0.2,
-        profit_sell_th=0.008,
-        balance_split=5,
+        game_date=game_date,
+        price_limit=price_limit,
+        loss_sell_th=loss_sell_th,
+        profit_sell_th=profit_sell_th,
+        buy_balance=buy_balance,
     )
     trader.start_trading()
