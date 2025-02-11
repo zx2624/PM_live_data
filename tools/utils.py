@@ -6,13 +6,7 @@ import time
 
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import (
-    AssetType,
-    BalanceAllowanceParams,
-    MarketOrderArgs,
-    OrderArgs,
-    OrderType,
-)
+from py_clob_client.clob_types import MarketOrderArgs, OrderArgs, OrderType
 from py_clob_client.exceptions import PolyApiException
 from py_clob_client.order_builder.constants import BUY, SELL
 
@@ -46,7 +40,6 @@ def setup_logger(name, log_file=None):
 default_logger = setup_logger("default_logger")
 host: str = "https://clob.polymarket.com"
 chain_id: int = 137
-default_logger.info("loading env")
 load_dotenv()
 key = os.getenv("POLYGON_WALLET_PRIVATE_KEY")
 funder = os.getenv("FUNDER")
@@ -54,15 +47,14 @@ default_logger.info("creating client")
 client = ClobClient(
     host, key=key, chain_id=chain_id, signature_type=1, funder=funder
 )  #
-default_logger.info("client created")
 creds = client.create_or_derive_api_creds()
 client.set_api_creds(creds)
-balance = client.get_balance_allowance(
-    params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-)["balance"]
-balance = float(balance) / 1e6
-default_logger.info(f"balance: {balance}")
-default_logger.info("loading csv")
+default_logger.info("client created")
+# balance = client.get_balance_allowance(
+#     params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+# )["balance"]
+# balance = float(balance) / 1e6
+# default_logger.info(f"balance: {balance}")
 
 
 quater_map = {
@@ -189,7 +181,7 @@ def check_flip(time_played, score_diff, df, logger: logging.Logger = default_log
     time_played = f"{time_played}"
     data_over_score_diff = df[(abs(df[time_played]) == abs(score_diff))].copy()  #
     # only consider to check flip rate when there are more than 100 games
-    if len(data_over_score_diff) < 500:
+    if len(data_over_score_diff) < 300:
         logger.info(
             f"only {len(data_over_score_diff)} games, not enough to check flip rate"
         )
@@ -229,6 +221,9 @@ def sell_with_market_price(
             if "not enough balance" in str(e):
                 logger.warning(f"sold out, with {e}")
                 break
+            elif "No orderbook exists" in str(e):
+                logger.warning(f"No orderbook exists, with {e}")
+                break
         except Exception as e:
             logger.error(f"sell {token} error: {e}")
             time.sleep(0.05)
@@ -239,10 +234,9 @@ def buy(
     price,
     price_threshold=0.9,
     price_limit=1.0,
-    balance_split=1.0,
+    current_balance=0.0,
     logger: logging.Logger = default_logger,
 ):
-    current_balance = (balance - 0.5) / balance_split
     size = current_balance / price
     if price >= price_threshold and price < 1.0 and price <= price_limit:
         logger.info(f"Im buying {token} at {price} for {size} shares")
@@ -273,10 +267,9 @@ def buy_in(
     price_threshold=0.9,
     price_limit=1.0,
     spread_th=None,
-    balance_split=1.0,
+    buy_balance=0.0,
     logger: logging.Logger = default_logger,
 ):
-    current_balance = (balance * 0.99) / balance_split
     price_pair = []
     for token in tokens:
         price = float(client.get_price(token, SELL)["price"])
@@ -290,18 +283,25 @@ def buy_in(
             tick_size = float(client.get_tick_size(token))
             logger.info(f"tick_size is {tick_size}")
             buy_price = min(price + 2 * tick_size, 1.0 - tick_size)
-            size = round(current_balance / buy_price, 2)
+            size = round(buy_balance / buy_price, 2)
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
             try:
-                res = client.create_and_post_order(
-                    OrderArgs(price=buy_price, size=size, side=BUY, token_id=token)
+                expiration_stamp = int(time.time()) + 20 + 60
+                order = client.create_order(
+                    OrderArgs(
+                        price=buy_price,
+                        size=size,
+                        side=BUY,
+                        token_id=token,
+                        expiration=expiration_stamp,
+                    )
                 )
+                res = client.post_order(order, orderType=OrderType.GTD)
+                logger.info(f"{token} post_order res: {res}")
                 order_book = client.get_order_book(token)
-                logger.info(f"{token} order_book: {order_book} res: {res}")
-                if "orderID" in res:
-                    orderid = res["orderID"]
-                    order_res = client.get_order(orderid)
-                    logger.info(f"{token} order_res: {order_res}")
+                logger.info(f"{token} order_book: {order_book}")
+                # sleep 10 s
+                time.sleep(10)
             except PolyApiException as e:
                 if "not enough balance" in str(e):
                     logger.error("not enough balance, pretend I bought it")
@@ -311,9 +311,22 @@ def buy_in(
                 else:
                     raise e
 
-            logger.info(res)
+            # check order fill size
+            orderid = res["orderID"]
+            order_res = None
+            while True:
+                try:
+                    order_res = client.get_order(orderid)
+                except Exception:
+                    continue
+                if order_res and order_res["status"] != "LIVE":
+                    break
+                logger.info(f"{token} order still open with {order_res}")
+                time.sleep(0.5)
+            logger.info(f"{token} order_res: {order_res}")
+            size = float(order_res["size_matched"])
+
             # return res
-            import time
 
             time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             with open("assets/buy_in.log", "a") as f:
