@@ -144,6 +144,10 @@ class NBATrader:
                 logger.warning(f"fake price too low, sell {team} {token} at {price}")
                 if token in self.fake_token_infos:
                     self.fake_token_infos.pop(token)
+            if price - ori_price > 0.05:
+                logger.info(f"fake enough profit, sell {team} {token} at {price}")
+                if token in self.fake_token_infos:
+                    self.fake_token_infos.pop(token)
 
     def buy_one_game(self, game_id: str):
         home_team = self.gameid_token[game_id]["homeTeam"]["team"]
