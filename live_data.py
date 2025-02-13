@@ -167,6 +167,8 @@ class NBATrader:
             if not game_info:
                 continue
 
+            home_score = game_info["homeTeam"]["score"]
+            away_score = game_info["awayTeam"]["score"]
             status_text = game_info["gameStatusText"]
             if self._is_early_game(status_text):
                 logger.info(f"{away_team} vs. {home_team} {status_text}, sleeping")
@@ -192,8 +194,14 @@ class NBATrader:
 
             if game_info["gameStatus"] == 3:
                 self._handle_game_end(
-                    game_id, away_team, home_team, away_token, home_token, logger
+                    away_team, home_team, away_token, home_token, logger
                 )
+                logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
+                if self.qt_window:
+                    self.qt_window.print(
+                        match_up,
+                        f"{away_team}:{away_score} - {home_team}:{home_score} {bought_str}",  # noqa
+                    )
                 break
 
     def _get_game_info(self, game_id, away_team, home_team, logger):
@@ -297,7 +305,6 @@ class NBATrader:
 
     def _handle_game_end(
         self,
-        game_id: str,
         away_team: str,
         home_team: str,
         away_token: str,
@@ -307,11 +314,6 @@ class NBATrader:
         """
         处理比赛结束时的清理工作
         """
-        logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
-        if self.qt_window:
-            self.qt_window.print(
-                f"{away_team}_{home_team}", f"{away_team} vs. {home_team} finished"
-            )
         # 等待一段时间，以防还有未完成的卖出操作
         time.sleep(10)
 
@@ -384,24 +386,20 @@ class NBATrader:
                 )
 
                 # 构建购买状态字符串
-                bought_str = " ".join(
-                    [
-                        f"bought {leading_team} for {size} shares",
-                        f"at {price_pair} with flip_rate {flip_rate}",
-                        f"{status_text}",
-                    ]
-                )
 
                 if bought:
                     # 记录实际购买信息
+                    bought_str = " ".join(
+                        [
+                            f"bought {leading_team} for {size} shares",
+                            f"at {price_pair} with flip_rate {flip_rate}",
+                            f"{status_text}",
+                        ]
+                    )
                     self.token_infos[leading_token] = self.manager.dict()
                     self.token_infos[leading_token]["size"] = size
                     self.token_infos[leading_token]["price"] = price_pair[0]
                     self.token_infos[leading_token]["team"] = leading_team
-                else:
-                    bought_str = f"not {bought_str}"
-
-                logger.info(bought_str)
 
             except Exception as e:
                 logger.info(f"buying {leading_team} fail: {e}")
