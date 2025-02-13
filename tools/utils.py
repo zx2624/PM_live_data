@@ -3,10 +3,16 @@ import logging
 import os
 import sys
 import time
+from typing import List
 
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import MarketOrderArgs, OrderArgs, OrderType
+from py_clob_client.clob_types import (
+    MarketOrderArgs,
+    OrderArgs,
+    OrderBookSummary,
+    OrderType,
+)
 from py_clob_client.exceptions import PolyApiException
 from py_clob_client.order_builder.constants import BUY, SELL
 
@@ -262,19 +268,46 @@ def buy(
                 raise e
 
 
+# TODO: add calculate_sell_market_price
+
+
+def calculate_buy_market_price(
+    order_book: OrderBookSummary,
+    amount_to_match: float,
+    logger: logging.Logger = default_logger,
+) -> float:
+    sum = 0.0
+    positions = order_book.asks
+    for p in reversed(positions):
+        sum += float(p.size) * float(p.price)
+        if sum >= amount_to_match:
+            return float(p.price)
+    logger.error(f"not enough liquidity to match {amount_to_match}")
+    return -1
+
+
 def buy_in(
     tokens,
+    buy_price=None,
     price_threshold=0.9,
     price_limit=1.0,
     spread_th=None,
     buy_balance=0.0,
     logger: logging.Logger = default_logger,
 ):
-    price_pair = []
+    price_pair: List[float] = []
     for token in tokens:
-        price = float(client.get_price(token, SELL)["price"])
-        price_pair.append(price)
-        if price >= price_threshold and price < 1.0 and price <= price_limit:
+        order_book: OrderBookSummary = client.get_order_book(token)
+        if not buy_price:
+            buy_price = calculate_buy_market_price(order_book, buy_balance, logger)
+            if buy_price == -1:
+                return False, price_pair, 0
+        price_pair.append(buy_price)
+        if (
+            buy_price >= price_threshold
+            and buy_price < 1.0
+            and buy_price <= price_limit
+        ):
             if spread_th:
                 spread = float(client.get_spread(token)["spread"])
                 if spread > spread_th:
@@ -282,7 +315,6 @@ def buy_in(
                     return False, price_pair, 0
             tick_size = float(client.get_tick_size(token))
             logger.info(f"tick_size is {tick_size}")
-            buy_price = min(price + 2 * tick_size, 1.0 - tick_size)
             size = round(buy_balance / buy_price, 2)
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
             try:
@@ -298,7 +330,6 @@ def buy_in(
                 )
                 res = client.post_order(order, orderType=OrderType.GTD)
                 logger.info(f"{token} post_order res: {res}")
-                order_book = client.get_order_book(token)
                 logger.info(f"{token} order_book: {order_book}")
                 # sleep 10 s
                 time.sleep(10)

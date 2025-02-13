@@ -31,11 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-02-10"
+game_date = "2025-02-13"
 price_limit = 0.998
 loss_sell_th = 0.2
-profit_sell_th = 0.008
-buy_balance = 106.0
+profit_sell_th = 0.015
+buy_balance = round(536 / 3, 2)
 
 
 class NBATrader:
