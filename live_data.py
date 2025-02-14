@@ -200,7 +200,7 @@ class NBATrader:
                 if self.qt_window:
                     self.qt_window.print(
                         match_up,
-                        f"{away_team}:{away_score} - {home_team}:{home_score} {bought_str}",  # noqa
+                        f"{away_team}:{away_score} - {home_team}:{home_score} finished. {bought_str}",  # noqa
                     )
                 break
 
