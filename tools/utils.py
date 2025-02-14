@@ -179,7 +179,7 @@ def calculate_row_product(row, time_played):
 
 
 def check_flip(time_played, score_diff, df, logger: logging.Logger = default_logger):
-    if time_played >= 2880 - 10:
+    if time_played >= 2880 - 2:
         logger.info("too close to the end of the game, skip")
         return 100
     if int(score_diff) == 0:
@@ -362,5 +362,5 @@ def buy_in(
             time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             with open("assets/buy_in.log", "a") as f:
                 f.write(f"{token} {buy_price} {size} @{time_str}\n")
-            return True, price_pair, size
+            return size > 0, price_pair, size
     return False, price_pair, 0
