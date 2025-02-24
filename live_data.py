@@ -31,11 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-02-13"
-price_limit = 0.998
+game_date = "2025-02-24"
+price_limit = 0.992
 loss_sell_th = 0.2
-profit_sell_th = 0.015
-buy_balance = round(536 / 3, 2)
+profit_sell_th = 0.008
+buy_balance = round(560 / 3, 2)
 
 
 class NBATrader:
@@ -83,13 +83,13 @@ class NBATrader:
                 for token in list(self.token_infos.keys())
                 + list(self.fake_token_infos.keys())
             ]
-
+            time_now = time.time()
             try:
                 prices = client.get_prices(bookparams)
             except Exception as e:
                 logger.error(f"error when get prices: {e}")
                 continue
-
+            logger.info(f"get prices time: {time.time() - time_now}")
             try:
                 self._process_real_tokens(prices, side, logger)
                 self._process_fake_tokens(prices, side, logger)
@@ -118,7 +118,7 @@ class NBATrader:
                 sell_with_market_price(token=token, size=shares, logger=logger)
                 if token in self.token_infos:
                     self.token_infos.pop(token)
-            elif price - ori_price > self.profit_sell_th:
+            elif price - ori_price > self.profit_sell_th and price == 0.999:
                 logger.info(
                     f"enough profit, sell {team} {token} at {price} for {shares} shares"
                 )
@@ -386,7 +386,7 @@ class NBATrader:
                 )
 
                 # 构建购买状态字符串
-
+                # TODO: think about how to deal with buy failure, not enough balance situation
                 if bought:
                     # 记录实际购买信息
                     bought_str = " ".join(

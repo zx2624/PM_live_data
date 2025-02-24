@@ -76,6 +76,8 @@ def query_events(tag_slug: str, game_date: str) -> list:
     """
     query events according to tag_slug and game_date
     """
+    if tag_slug == "":
+        return []
     gamma = Gamma()
     querystring_params = {
         "limit": 1000,
@@ -237,35 +239,48 @@ def sell_with_market_price(
 
 def buy(
     token: str,
-    price,
-    price_threshold=0.9,
-    price_limit=1.0,
-    current_balance=0.0,
+    buy_price: float,
+    size: float,
     logger: logging.Logger = default_logger,
 ):
-    size = current_balance / price
-    if price >= price_threshold and price < 1.0 and price <= price_limit:
-        logger.info(f"Im buying {token} at {price} for {size} shares")
-        try:
-            res = client.create_and_post_order(
-                OrderArgs(price=price, size=price_limit, side=BUY, token_id=token)
+    try:
+        expiration_stamp = int(time.time()) + 20 + 60
+        order = client.create_order(
+            OrderArgs(
+                price=buy_price,
+                size=size,
+                side=BUY,
+                token_id=token,
+                expiration=expiration_stamp,
             )
-            if "orderID" in res:
-                orderid = res["orderID"]
-                order_res = client.get_order(orderid)
-                logger.info(f"{token} order_res: {order_res}")
-            logger.info(f"{token} res: {res}")
-            order_book = client.get_order_book(token)
-            logger.info(f"{token} order_book: {order_book}")
+        )
+        res = client.post_order(order, orderType=OrderType.GTD)
+        logger.info(f"{token} post_order res: {res}")
+        # sleep 10 s
+        time.sleep(10)
+    except PolyApiException as e:
+        if "not enough balance" in str(e):
+            logger.error("not enough balance, pretend I bought it")
+            return True, size
+        else:
+            logger.error(f"buy {token} error: {e}")
+            raise e
 
-        except PolyApiException as e:
-            if "not enough balance" in str(e):
-                logger.error("not enough balance, pretend I bought it")
-                order_book = client.get_order_book(token)
-                logger.info(f"{token} order_book: {order_book}")
-                return True
-            else:
-                raise e
+    # check order fill size
+    orderid = res["orderID"]
+    order_res = None
+    while True:
+        try:
+            order_res = client.get_order(orderid)
+        except Exception:
+            continue
+        if order_res and order_res["status"] != "LIVE":
+            break
+        logger.info(f"{token} order still open with {order_res}")
+        time.sleep(0.5)
+    logger.info(f"{token} order_res: {order_res}")
+    size = float(order_res["size_matched"])
+    return True, size
 
 
 # TODO: add calculate_sell_market_price
@@ -282,8 +297,8 @@ def calculate_buy_market_price(
         sum += float(p.size) * float(p.price)
         if sum >= amount_to_match:
             return float(p.price)
-    logger.error(f"not enough liquidity to match {amount_to_match}")
-    return -1
+    # logger.error(f"not enough liquidity to match {amount_to_match}, only {sum}")
+    return 1.0
 
 
 def buy_in(
@@ -297,11 +312,16 @@ def buy_in(
 ):
     price_pair: List[float] = []
     for token in tokens:
-        order_book: OrderBookSummary = client.get_order_book(token)
+        while True:
+            try:
+                order_book = client.get_order_book(token)
+                break
+            except Exception as e:
+                logger.error(f"get_order_book error: {e}")
+                time.sleep(0.1)
         if not buy_price:
             buy_price = calculate_buy_market_price(order_book, buy_balance, logger)
-            if buy_price == -1:
-                return False, price_pair, 0
+            logger.info(f"buy_price is {buy_price}")
         price_pair.append(buy_price)
         if (
             buy_price >= price_threshold
@@ -313,54 +333,14 @@ def buy_in(
                 if spread > spread_th:
                     logger.info(f"spread is {spread}, skip")
                     return False, price_pair, 0
-            tick_size = float(client.get_tick_size(token))
-            logger.info(f"tick_size is {tick_size}")
             size = round(buy_balance / buy_price, 2)
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
-            try:
-                expiration_stamp = int(time.time()) + 20 + 60
-                order = client.create_order(
-                    OrderArgs(
-                        price=buy_price,
-                        size=size,
-                        side=BUY,
-                        token_id=token,
-                        expiration=expiration_stamp,
-                    )
-                )
-                res = client.post_order(order, orderType=OrderType.GTD)
-                logger.info(f"{token} post_order res: {res}")
-                logger.info(f"{token} order_book: {order_book}")
-                # sleep 10 s
-                time.sleep(10)
-            except PolyApiException as e:
-                if "not enough balance" in str(e):
-                    logger.error("not enough balance, pretend I bought it")
-                    order_book = client.get_order_book(token)
-                    logger.info(f"{token} order_book: {order_book}")
-                    return False, price_pair, size
-                else:
-                    raise e
-
-            # check order fill size
-            orderid = res["orderID"]
-            order_res = None
-            while True:
-                try:
-                    order_res = client.get_order(orderid)
-                except Exception:
-                    continue
-                if order_res and order_res["status"] != "LIVE":
-                    break
-                logger.info(f"{token} order still open with {order_res}")
-                time.sleep(0.5)
-            logger.info(f"{token} order_res: {order_res}")
-            size = float(order_res["size_matched"])
+            bought, size = buy(token=token, buy_price=buy_price, size=size)
 
             # return res
 
             time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             with open("assets/buy_in.log", "a") as f:
                 f.write(f"{token} {buy_price} {size} @{time_str}\n")
-            return size > 0, price_pair, size
+            return bought and size > 0, price_pair, size
     return False, price_pair, 0
