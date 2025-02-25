@@ -31,7 +31,7 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-02-24"
+game_date = "2025-02-25"
 price_limit = 0.992
 loss_sell_th = 0.2
 profit_sell_th = 0.008
@@ -71,8 +71,10 @@ class NBATrader:
         side = BUY
         logfile = f"logs/{self.game_date}/price_monitor.log"
         logger = setup_logger("price_monitor", logfile)
-
+        last_time = time.time()
         while True:
+            logger.info(f"price monitor to last time: {time.time() - last_time}")
+            last_time = time.time()
             if len(self.token_infos) == 0 and len(self.fake_token_infos) == 0:
                 logger.info("no token to sell, sleep for 60 seconds")
                 time.sleep(60)
@@ -83,13 +85,11 @@ class NBATrader:
                 for token in list(self.token_infos.keys())
                 + list(self.fake_token_infos.keys())
             ]
-            time_now = time.time()
             try:
-                prices = client.get_prices(bookparams)
+                prices = client.get_prices(bookparams, timeout=1)
             except Exception as e:
                 logger.error(f"error when get prices: {e}")
                 continue
-            logger.info(f"get prices time: {time.time() - time_now}")
             try:
                 self._process_real_tokens(prices, side, logger)
                 self._process_fake_tokens(prices, side, logger)
@@ -315,7 +315,7 @@ class NBATrader:
         处理比赛结束时的清理工作
         """
         # 等待一段时间，以防还有未完成的卖出操作
-        time.sleep(10)
+        time.sleep(60 * 3)
 
         # 清理可能存在的token信息
         for token in [away_token, home_token]:
@@ -386,7 +386,8 @@ class NBATrader:
                 )
 
                 # 构建购买状态字符串
-                # TODO: think about how to deal with buy failure, not enough balance situation
+                # TODO: think about how to deal with buy failure
+                # not enough balance situation
                 if bought:
                     # 记录实际购买信息
                     bought_str = " ".join(

@@ -223,7 +223,7 @@ def sell_with_market_price(
                     side=SELL,
                 )
             )
-            resp = client.post_order(order, orderType=OrderType.FOK)
+            resp = client.post_order(order, orderType=OrderType.FOK, timeout=2)
             logger.info(f"sell {token} resp: {resp}")
         except PolyApiException as e:
             if "not enough balance" in str(e):
@@ -314,7 +314,7 @@ def buy_in(
     for token in tokens:
         while True:
             try:
-                order_book = client.get_order_book(token)
+                order_book = client.get_order_book(token, timeout=1)
                 break
             except Exception as e:
                 logger.error(f"get_order_book error: {e}")
@@ -335,6 +335,7 @@ def buy_in(
                     return False, price_pair, 0
             size = round(buy_balance / buy_price, 2)
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
+            logger.info(f"order_book: {order_book}")
             bought, size = buy(token=token, buy_price=buy_price, size=size)
 
             # return res
