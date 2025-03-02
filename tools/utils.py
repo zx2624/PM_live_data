@@ -237,6 +237,47 @@ def sell_with_market_price(
             time.sleep(0.05)
 
 
+def sell_with_limit_price(
+    token: str, sell_price: float, size: float, logger: logging.Logger = default_logger
+):
+    while True:
+        try:
+            expiration_stamp = int(time.time()) + 20 + 60
+            order = client.create_order(
+                OrderArgs(
+                    price=sell_price,
+                    size=size,
+                    side=SELL,
+                    token_id=token,
+                    expiration=expiration_stamp,
+                )
+            )
+            res = client.post_order(order, orderType=OrderType.GTD, timeout=2)
+            logger.info(f"{token} post_order res: {res}")
+            time.sleep(10)
+        except PolyApiException as e:
+            if "not enough balance" in str(e):
+                logger.error("not enough balance, pretend I sold it")
+                return True, 0
+            else:
+                logger.error(f"sell {token} error: {e}")
+                raise e
+        orderid = res["orderID"]
+        order_res = None
+        while True:
+            try:
+                order_res = client.get_order(orderid)
+            except Exception:
+                continue
+            if order_res and order_res["status"] != "LIVE":
+                break
+            logger.info(f"{token} order still open with {order_res}")
+            time.sleep(0.5)
+        logger.info(f"{token} order_res: {order_res}")
+        size = float(order_res["size_matched"])
+        return True, size
+
+
 def buy(
     token: str,
     buy_price: float,
@@ -336,7 +377,9 @@ def buy_in(
             size = round(buy_balance / buy_price, 2)
             logger.info(f"Im buying {token} at {buy_price} for {size} shares")
             logger.info(f"order_book: {order_book}")
-            bought, size = buy(token=token, buy_price=buy_price, size=size)
+            bought, size = buy(
+                token=token, buy_price=buy_price, size=size, logger=logger
+            )
 
             # return res
 
