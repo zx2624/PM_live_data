@@ -11,7 +11,7 @@ from typing import Dict, List
 
 import certifi
 import pandas as pd
-from py_clob_client.clob_types import BookParams
+from py_clob_client.clob_types import BookParams, OrderArgs
 from py_clob_client.order_builder.constants import BUY, SELL
 from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
@@ -31,11 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-02-25"
+game_date = "2025-03-02"
 price_limit = 0.992
 loss_sell_th = 0.2
 profit_sell_th = 0.008
-buy_balance = round(560 / 3, 2)
+buy_balance = round(585 / 3, 2)
 
 
 class NBATrader:
@@ -122,7 +122,14 @@ class NBATrader:
                 logger.info(
                     f"enough profit, sell {team} {token} at {price} for {shares} shares"
                 )
-                sell_with_market_price(token=token, size=shares, logger=logger)
+                # TODO: don't use market price, use limit price
+                # sell_with_market_price(token=token, size=shares, logger=logger)
+                res = client.create_and_post_order(
+                    OrderArgs(token_id=token, side=SELL, price=price, size=shares)
+                )
+                logger.info(
+                    f"sell {team} {token} at {price} for {shares} shares, res: {res}"
+                )
                 if token in self.token_infos:
                     self.token_infos.pop(token)
 
@@ -340,7 +347,7 @@ class NBATrader:
         """
         尝试进行模拟购买操作
         """
-        if flip_rate < 0.05 and fake_bought_str == "":
+        if flip_rate < 0.02 and fake_bought_str == "":
             try:
                 price = float(client.get_price(leading_token, SELL)["price"])
                 order_book = client.get_order_book(leading_token)
@@ -376,6 +383,10 @@ class NBATrader:
         尝试进行实际购买操作
         """
         if flip_rate < 0.005 and bought_str == "":
+            self.qt_window.print(
+                f"{leading_team}_buy",
+                f"{leading_team} flip rate: {flip_rate}, buying",
+            )
             try:
                 bought, price_pair, size = buy_in(
                     tokens=[leading_token],
