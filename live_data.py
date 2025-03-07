@@ -19,7 +19,10 @@ from requests.exceptions import ReadTimeout
 from nba_api.live.nba.endpoints import boxscore
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.static import teams
-from tools.qt_printer import ThreadDisplayWindow
+try:
+    from tools.qt_printer import ThreadDisplayWindow
+except ImportError:
+    ThreadDisplayWindow = None
 from tools.utils import (
     buy_in,
     check_flip,
@@ -460,8 +463,9 @@ class NBATrader:
             f"{self.gameid_token[game_id]['awayTeam']['team']}_{self.gameid_token[game_id]['homeTeam']['team']}"  # noqa
             for game_id in self.gameid_token
         ]
-        self.qt_window = ThreadDisplayWindow(window_names)
-        self.qt_window.show()
+        if ThreadDisplayWindow is not None:
+            self.qt_window = ThreadDisplayWindow(window_names)
+            self.qt_window.show()
 
     def start_trading(self):
         """Start the trading system"""

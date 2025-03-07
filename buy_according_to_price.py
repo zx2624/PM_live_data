@@ -26,15 +26,16 @@ from tools.utils import (
     setup_logger,
 )
 
-tag_slug = None
-game_date = "2025-02-23"
+tag_slug = "nba"
+game_date = "2025-02-27"
 slugs = ["germany-parliamentary-election"]
+slugs = [""]
 loss_sell_th = 0.2
 profit_sell_th = 0.03
 price_threshold = 0.95
 price_limit = 0.998
 spread_th = 0.01
-buy_balance = 100.0
+buy_balance = 1.0
 
 
 class TradingSystem:
