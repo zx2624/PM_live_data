@@ -31,11 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-03-02"
+game_date = "2025-03-07"
 price_limit = 0.992
 loss_sell_th = 0.2
 profit_sell_th = 0.008
-buy_balance = round(585 / 3, 2)
+buy_balance = round(564 / 2, 2)
 
 
 class NBATrader:
@@ -118,7 +118,7 @@ class NBATrader:
                 sell_with_market_price(token=token, size=shares, logger=logger)
                 if token in self.token_infos:
                     self.token_infos.pop(token)
-            elif price - ori_price > self.profit_sell_th and price == 0.999:
+            elif price - ori_price > self.profit_sell_th:
                 logger.info(
                     f"enough profit, sell {team} {token} at {price} for {shares} shares"
                 )
@@ -212,6 +212,7 @@ class NBATrader:
                 break
 
     def _get_game_info(self, game_id, away_team, home_team, logger):
+        time_now = time.time()
         try:
             box = boxscore.BoxScore(game_id, timeout=5)
             info = box.game.get_dict()
@@ -219,9 +220,11 @@ class NBATrader:
                 info["awayTeam"]["teamName"] == away_team
                 and info["homeTeam"]["teamName"] == home_team
             ), "error, away team name not match"
+            logger.info(f"query {away_team}-{home_team} time: {time.time() - time_now}")
             return info
         except ReadTimeout as e:
             logger.info(f"query {away_team} VS {home_team} timeout {e}")
+            logger.info(f"query {away_team}-{home_team} time: {time.time() - time_now}")
         except JSONDecodeError:
             logger.info(
                 f"game {away_team} VS {home_team} not started, sleep for 5 minutes"
@@ -231,9 +234,11 @@ class NBATrader:
                     f"{away_team}_{home_team}",
                     f"game {away_team} VS {home_team} not started, sleep for 5 minutes",
                 )
+            logger.info(f"query {away_team}-{home_team} time: {time.time() - time_now}")
             time.sleep(300)
         except Exception as e:
             logger.info(f"{away_team} VS {home_team}, some error {e}")
+            logger.info(f"query {away_team}-{home_team} time: {time.time() - time_now}")
         return None
 
     def _is_early_game(self, status_text: str) -> bool:

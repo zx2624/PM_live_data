@@ -314,6 +314,7 @@ def buy(
         try:
             order_res = client.get_order(orderid)
         except Exception:
+            logger.error(f"get_order error: {e}")
             continue
         if order_res and order_res["status"] != "LIVE":
             break
@@ -353,6 +354,7 @@ def buy_in(
 ):
     price_pair: List[float] = []
     for token in tokens:
+        time_now = time.time()
         while True:
             try:
                 order_book = client.get_order_book(token, timeout=1)
@@ -362,7 +364,7 @@ def buy_in(
                 time.sleep(0.1)
         if not buy_price:
             buy_price = calculate_buy_market_price(order_book, buy_balance, logger)
-            logger.info(f"buy_price is {buy_price}")
+        logger.info(f"buy_price: {buy_price}, cost time: {time.time() - time_now}")
         price_pair.append(buy_price)
         if (
             buy_price >= price_threshold
