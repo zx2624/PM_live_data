@@ -13,13 +13,13 @@ import certifi
 import pandas as pd
 from py_clob_client.clob_types import BookParams, OrderArgs
 from py_clob_client.order_builder.constants import BUY, SELL
-from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
 
 from nba_api.live.nba.endpoints import boxscore
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.static import teams
 try:
+    from PyQt6.QtWidgets import QApplication
     from tools.qt_printer import ThreadDisplayWindow
 except ImportError:
     ThreadDisplayWindow = None
@@ -470,7 +470,8 @@ class NBATrader:
     def start_trading(self):
         """Start the trading system"""
         # Start Qt application
-        app = QApplication(sys.argv)
+        if ThreadDisplayWindow is not None:
+            app = QApplication(sys.argv)
 
         self.setup_games()
 
@@ -484,7 +485,8 @@ class NBATrader:
         sell_thread = threading.Thread(target=self.price_monitor)
         sell_thread.start()
         self.threads.append(sell_thread)
-        app.exec()
+        if ThreadDisplayWindow is not None:
+            app.exec()
 
         # Wait for all threads to complete
         for thread in self.threads:
