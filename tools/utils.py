@@ -313,7 +313,7 @@ def buy(
     while True:
         try:
             order_res = client.get_order(orderid)
-        except Exception:
+        except Exception as e:
             logger.error(f"get_order error: {e}")
             continue
         if order_res and order_res["status"] != "LIVE":

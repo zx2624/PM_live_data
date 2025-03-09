@@ -11,15 +11,17 @@ from typing import Dict, List
 
 import certifi
 import pandas as pd
-from py_clob_client.clob_types import BookParams, OrderArgs
+from py_clob_client.clob_types import BookParams, OrderArgs, PartialCreateOrderOptions
 from py_clob_client.order_builder.constants import BUY, SELL
 from requests.exceptions import ReadTimeout
 
 from nba_api.live.nba.endpoints import boxscore
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.static import teams
+
 try:
     from PyQt6.QtWidgets import QApplication
+
     from tools.qt_printer import ThreadDisplayWindow
 except ImportError:
     ThreadDisplayWindow = None
@@ -34,11 +36,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-03-07"
+game_date = "2025-03-09"
 price_limit = 0.992
-loss_sell_th = 0.2
+loss_sell_th = 0.4
 profit_sell_th = 0.008
-buy_balance = round(564 / 2, 2)
+buy_balance = round(512 / 3, 2)
 
 
 class NBATrader:
@@ -128,7 +130,8 @@ class NBATrader:
                 # TODO: don't use market price, use limit price
                 # sell_with_market_price(token=token, size=shares, logger=logger)
                 res = client.create_and_post_order(
-                    OrderArgs(token_id=token, side=SELL, price=price, size=shares)
+                    OrderArgs(token_id=token, side=SELL, price=price, size=shares),
+                    options=PartialCreateOrderOptions(tick_size=0.001),
                 )
                 logger.info(
                     f"sell {team} {token} at {price} for {shares} shares, res: {res}"
@@ -217,7 +220,7 @@ class NBATrader:
     def _get_game_info(self, game_id, away_team, home_team, logger):
         time_now = time.time()
         try:
-            box = boxscore.BoxScore(game_id, timeout=5)
+            box = boxscore.BoxScore(game_id, timeout=50)
             info = box.game.get_dict()
             assert (
                 info["awayTeam"]["teamName"] == away_team
@@ -391,10 +394,6 @@ class NBATrader:
         尝试进行实际购买操作
         """
         if flip_rate < 0.005 and bought_str == "":
-            self.qt_window.print(
-                f"{leading_team}_buy",
-                f"{leading_team} flip rate: {flip_rate}, buying",
-            )
             try:
                 bought, price_pair, size = buy_in(
                     tokens=[leading_token],
