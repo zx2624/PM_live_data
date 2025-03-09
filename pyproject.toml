@@ -40,6 +40,13 @@ dependencies = [
 ]
 
 readme = "README.md"
+[tool.poetry.dependencies]
+python = "^3.9"
+requests = "^2.32.3"
+numpy = "^1.22.2"
+pandas = "^2.2.3"
+httpx = "^0.28.1"
+web3 = "^6.11.0"
 
 [project.urls]
     repository = "https://github.com/swar/nba_api"
