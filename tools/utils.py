@@ -27,11 +27,7 @@ def setup_logger(name, log_file=None):
     # 创建一个Logger
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
-    # consol handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
+
     if log_file:
         if not os.path.exists(os.path.dirname(log_file)):
             os.makedirs(os.path.dirname(log_file))
@@ -39,6 +35,12 @@ def setup_logger(name, log_file=None):
         file_handler.setLevel(logging.INFO)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
+    else:
+        # loggger输出到控制台
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
 
     return logger
 
@@ -181,6 +183,9 @@ def calculate_row_product(row, time_played):
 
 
 def check_flip(time_played, score_diff, df, logger: logging.Logger = default_logger):
+    if time_played <= 1800:
+        # early than Q3 6:00
+        return 100
     if time_played >= 2880 - 2:
         logger.info("too close to the end of the game, skip")
         return 100

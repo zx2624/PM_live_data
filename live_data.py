@@ -36,11 +36,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-03-13"
+game_date = "2025-03-28"
 price_limit = 0.998
 loss_sell_th = 0.4
 profit_sell_th = 0.008
-buy_balance = round(535 / 4, 2)
+buy_balance = round(595 / 4, 2)
 
 
 class NBATrader:
@@ -130,8 +130,7 @@ class NBATrader:
                 # TODO: don't use market price, use limit price
                 # sell_with_market_price(token=token, size=shares, logger=logger)
                 res = client.create_and_post_order(
-                    OrderArgs(token_id=token, side=SELL, price=price, size=shares),
-                    options=PartialCreateOrderOptions(tick_size="0.001"),
+                    OrderArgs(token_id=token, side=SELL, price=price, size=shares)
                 )
                 logger.info(
                     f"sell {team} {token} at {price} for {shares} shares, res: {res}"

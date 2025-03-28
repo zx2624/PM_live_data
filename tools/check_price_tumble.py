@@ -14,7 +14,7 @@ if __name__ == "__main__":
     # after price hit certain price, check the rmain prices
     # plot with matplotlib bin 0.01
     check_price = 0.99
-    prices_folder = "history_prices/prices"
+    prices_folder = "tools/history_prices/prices"
     json_files = os.listdir(prices_folder)
     bin_res = 0.2
     bins = {}
@@ -55,6 +55,7 @@ if __name__ == "__main__":
         if bin_idx not in bins:
             bins[bin_idx] = 0
         bins[bin_idx] += 1
+    logger.info("Summary")
     logger.info(f"valid_cnt: {valid_cnt} / {len(json_files)}")
     logger.info(f"failed_cnt: {failed_cnt}")
     logger.info(f"bins: {bins}")
