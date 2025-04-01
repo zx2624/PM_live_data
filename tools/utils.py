@@ -19,7 +19,7 @@ from py_clob_client.order_builder.constants import BUY, SELL
 from agents.polymarket.gamma import GammaMarketClient as Gamma
 
 
-def setup_logger(name, log_file=None):
+def setup_logger(name, log_file=None, to_stdout=False):
     log_format = (
         "%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s"
     )
@@ -27,6 +27,13 @@ def setup_logger(name, log_file=None):
     # 创建一个Logger
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
+
+    if to_stdout:
+        # logger输出到控制台
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
 
     if log_file:
         if not os.path.exists(os.path.dirname(log_file)):

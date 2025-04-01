@@ -11,20 +11,15 @@ from typing import Dict, List
 
 import certifi
 import pandas as pd
-from py_clob_client.clob_types import BookParams, OrderArgs, PartialCreateOrderOptions
+from py_clob_client.clob_types import BookParams, OrderArgs
 from py_clob_client.order_builder.constants import BUY, SELL
+from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
 
 from nba_api.live.nba.endpoints import boxscore
 from nba_api.stats.endpoints import ScoreboardV2
 from nba_api.stats.static import teams
-
-try:
-    from PyQt6.QtWidgets import QApplication
-
-    from tools.qt_printer import ThreadDisplayWindow
-except ImportError:
-    ThreadDisplayWindow = None
+from tools.qt_printer import ThreadDisplayWindow
 from tools.utils import (
     buy_in,
     check_flip,
@@ -36,11 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-03-28"
+game_date = "2025-04-01"
 price_limit = 0.998
 loss_sell_th = 0.4
 profit_sell_th = 0.008
-buy_balance = round(595 / 4, 2)
+buy_balance = round(574 / 4, 2)
 
 
 class NBATrader:
@@ -52,7 +47,7 @@ class NBATrader:
         profit_sell_th: float = 0.008,
         buy_balance: float = 0.0,
     ):
-        self.logger = setup_logger("main", f"logs/{game_date}/main.log")
+        self.logger = setup_logger("main", f"logs/{game_date}/main.log", to_stdout=True)
         self.game_date = game_date
         self.price_limit = price_limit
         self.loss_sell_th = loss_sell_th
@@ -306,8 +301,39 @@ class NBATrader:
         logger.info(info_str)
         return bought_str, fake_bought_str
 
+    def _test_buy(self, team_token):
+        """
+        Perform a test buy to verify network functionality.
+        """
+        for team, token in team_token.items():
+            price = float(client.get_price(token, SELL)["price"])
+            if price > 0.1:
+                self.logger.info(
+                    f"Performing test buy for {team} with token {token} at price 0.01"
+                )
+                bought, price_pair, size = buy_in(
+                    tokens=[token],
+                    buy_price=0.01,
+                    price_threshold=0.0,  # Set to 0 to bypass threshold check
+                    price_limit=1.0,
+                    buy_balance=0.1,  # Small balance for test buy (0.01 * 10 = 0.1)
+                    logger=self.logger,
+                )
+                if bought:
+                    self.logger.info(
+                        f"Test buy for {team} with token {token} completed. Bought {size} shares at {price_pair[0]}"
+                    )
+                else:
+                    self.logger.warning(
+                        f"Test buy for {team} with token {token} failed"
+                    )
+                break
+
     def setup_games(self):
         team_token = get_team_token(self.game_date, "nba")
+        # Perform a test buy after obtaining team tokens
+        self._test_buy(team_token)
+
         board = ScoreboardV2(game_date=self.game_date)
 
         for data_set in board.data_sets:
