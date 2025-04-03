@@ -190,34 +190,41 @@ def calculate_row_product(row, time_played):
 
 
 def check_flip(time_played, score_diff, df, logger: logging.Logger = default_logger):
+    # Return different codes for different invalid scenarios
     if time_played <= 1800:
-        # early than Q3 6:00
-        return 100
+        # early than Q3 6:00 - Code 101
+        logger.info("Game too early, before Q3 6:00 mark")
+        return 101
     if time_played >= 2880 - 2:
-        logger.info("too close to the end of the game, skip")
-        return 100
+        # Too close to the end of the game - Code 102
+        logger.info("Too close to the end of the game, skip")
+        return 102
     if int(score_diff) == 0:
-        return 100
+        # Tie game - Code 103
+        logger.info("Score is tied, skip")
+        return 0.5
+
     time_played = f"{time_played}"
-    data_over_score_diff = df[(abs(df[time_played]) == abs(score_diff))].copy()  #
-    # only consider to check flip rate when there are more than 100 games
+    data_over_score_diff = df[(abs(df[time_played]) == abs(score_diff))].copy()
+
+    # Not enough games for statistical significance - Code 104
     if len(data_over_score_diff) < 300:
         logger.info(
-            f"only {len(data_over_score_diff)} games, not enough to check flip rate"
+            f"Only {len(data_over_score_diff)} games, not enough to check flip rate"
         )
-        return 100
-    # check if time_played and last_score_diff have the same sign
-    # current code has below warning, amend it
-    # /home/zx/code/nba_api-master/tools/utils.py:96: SettingWithCopyWarning:
-    # A value is trying to be set on a copy of a slice from a DataFrame.
-    # Try using .loc[row_indexer,col_indexer] = value instead
-    data_over_score_diff["product"] = data_over_score_diff.apply(
+        return 104
+
+    # Use .loc instead of directly assigning to avoid SettingWithCopyWarning
+    data_over_score_diff.loc[:, "product"] = data_over_score_diff.apply(
         lambda row: calculate_row_product(row, time_played), axis=1
     )
     fliped_games = data_over_score_diff[data_over_score_diff["product"] < 0]
     fliped_rate = len(fliped_games) / len(data_over_score_diff)
     logger.info(
-        f"fliped_rate: {fliped_rate}, {len(fliped_games)} / {len(data_over_score_diff)}"
+        (
+            f"Fliped_rate: {fliped_rate:.4f}, {len(fliped_games)} / "
+            f"{len(data_over_score_diff)}"
+        )
     )
     return fliped_rate
 

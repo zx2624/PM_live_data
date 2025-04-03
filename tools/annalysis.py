@@ -89,7 +89,10 @@ def analyze_price_losses(log_dir):
     # 打印损失分析结果
     for file_path, (min_loss, line_number, latest_loss) in file_losses.items():
         print(
-            f"最小损失: {min_loss:.4f}, 最新损失: {latest_loss:.4f}, {file_path}:{line_number+1}"  # noqa
+            (
+                f"最小损失: {min_loss:.4f}, 最新损失: {latest_loss:.4f}, "
+                f"{file_path}:{line_number+1}"
+            )
         )
 
 

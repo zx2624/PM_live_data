@@ -31,11 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-04-01"
+game_date = "2025-04-03"
 price_limit = 0.998
 loss_sell_th = 0.4
-profit_sell_th = 0.008
-buy_balance = round(574 / 4, 2)
+profit_sell_th = 0.01
+buy_balance = round(583 / 4, 2)
 
 
 class NBATrader:
@@ -101,6 +101,7 @@ class NBATrader:
             shares = round(self.token_infos[token]["size"], 2)
             ori_price = self.token_infos[token]["price"]
             team = self.token_infos[token]["team"]
+            flip_rate = self.token_infos[token]["flip_rate"]
 
             if token not in prices:
                 logger.warning(f"token {token} not in prices")
@@ -108,7 +109,10 @@ class NBATrader:
 
             price = float(prices[token][side])
             logger.info(
-                f"{team} {token} shares: {shares}, ori_price: {ori_price}, current price: {price}"  # noqa
+                (
+                    f"{team} {token} shares: {shares}, ori_price: {ori_price}, "
+                    f"current price: {price}, flip_rate: {flip_rate}"
+                )
             )
 
             if ori_price - price > self.loss_sell_th:
@@ -207,7 +211,10 @@ class NBATrader:
                 if self.qt_window:
                     self.qt_window.print(
                         match_up,
-                        f"{away_team}:{away_score} - {home_team}:{home_score} finished. {bought_str}",  # noqa
+                        (
+                            f"{away_team}:{away_score} - {home_team}:{home_score} "
+                            f"finished. {bought_str}"
+                        ),
                     )
                 break
 
@@ -321,7 +328,10 @@ class NBATrader:
                 )
                 if bought:
                     self.logger.info(
-                        f"Test buy for {team} with token {token} completed. Bought {size} shares at {price_pair[0]}"
+                        (
+                            f"Test buy for {team} with token {token} completed. "
+                            f"Bought {size} shares at {price_pair[0]}"
+                        )
                     )
                 else:
                     self.logger.warning(
@@ -397,13 +407,16 @@ class NBATrader:
                     ]
                 )
                 logger.info(fake_bought_str)
-                # 记录模拟购买信息
+                # 记录模拟购买信息，增加flip_rate字段
                 self.fake_token_infos[leading_token] = self.manager.dict()
                 self.fake_token_infos[leading_token]["price"] = price
                 self.fake_token_infos[leading_token]["size"] = 0
                 self.fake_token_infos[leading_token]["team"] = leading_team
+                self.fake_token_infos[leading_token]["flip_rate"] = flip_rate
             except Exception:
                 logger.info("error when get order book or price")
+        if fake_bought_str != "":
+            self.fake_token_infos[leading_token]["flip_rate"] = flip_rate
         return fake_bought_str
 
     def _try_real_buy(
@@ -432,7 +445,6 @@ class NBATrader:
                 # TODO: think about how to deal with buy failure
                 # not enough balance situation
                 if bought:
-                    # 记录实际购买信息
                     bought_str = " ".join(
                         [
                             f"bought {leading_team} for {size} shares",
@@ -444,9 +456,11 @@ class NBATrader:
                     self.token_infos[leading_token]["size"] = size
                     self.token_infos[leading_token]["price"] = price_pair[0]
                     self.token_infos[leading_token]["team"] = leading_team
-
+                    self.token_infos[leading_token]["flip_rate"] = flip_rate
             except Exception as e:
                 logger.info(f"buying {leading_team} fail: {e}")
+            if bought_str != "":
+                self.token_infos[leading_token]["flip_rate"] = flip_rate
         return bought_str
 
     def _process_game_data(self, df, team_token):
@@ -484,7 +498,8 @@ class NBATrader:
 
     def _setup_qt_window(self):
         window_names = [
-            f"{self.gameid_token[game_id]['awayTeam']['team']}_{self.gameid_token[game_id]['homeTeam']['team']}"  # noqa
+            f"{self.gameid_token[game_id]['awayTeam']['team']}_"
+            + f"{self.gameid_token[game_id]['homeTeam']['team']}"
             for game_id in self.gameid_token
         ]
         if ThreadDisplayWindow is not None:
