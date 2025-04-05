@@ -31,11 +31,11 @@ from tools.utils import (
 )
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-04-03"
+game_date = "2025-04-04"
 price_limit = 0.998
 loss_sell_th = 0.4
-profit_sell_th = 0.01
-buy_balance = round(583 / 4, 2)
+profit_sell_th = 0.015
+buy_balance = round(586.9 / 4, 2)
 
 
 class NBATrader:
@@ -415,7 +415,7 @@ class NBATrader:
                 self.fake_token_infos[leading_token]["flip_rate"] = flip_rate
             except Exception:
                 logger.info("error when get order book or price")
-        if fake_bought_str != "":
+        if fake_bought_str != "" and leading_token in self.fake_token_infos:
             self.fake_token_infos[leading_token]["flip_rate"] = flip_rate
         return fake_bought_str
 
@@ -459,8 +459,9 @@ class NBATrader:
                     self.token_infos[leading_token]["flip_rate"] = flip_rate
             except Exception as e:
                 logger.info(f"buying {leading_team} fail: {e}")
-            if bought_str != "":
-                self.token_infos[leading_token]["flip_rate"] = flip_rate
+        if bought_str != "" and leading_token in self.token_infos:
+            # 更新购买状态
+            self.token_infos[leading_token]["flip_rate"] = flip_rate
         return bought_str
 
     def _process_game_data(self, df, team_token):
