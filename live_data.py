@@ -30,12 +30,14 @@ from tools.utils import (
     setup_logger,
 )
 
+CUR_DIR = Path(__file__).parent
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-04-04"
+game_date = "2025-04-13"
 price_limit = 0.998
 loss_sell_th = 0.4
+flip_rate_sell_th = 0.3
 profit_sell_th = 0.015
-buy_balance = round(586.9 / 4, 2)
+buy_balance = round(563 / 5, 2)
 
 
 class NBATrader:
@@ -44,14 +46,18 @@ class NBATrader:
         game_date: str,
         price_limit: float = 0.998,
         loss_sell_th: float = 0.2,
+        flip_rate_sell_th: float = 0.3,
         profit_sell_th: float = 0.008,
         buy_balance: float = 0.0,
     ):
-        self.logger = setup_logger("main", f"logs/{game_date}/main.log", to_stdout=True)
+        self.logger = setup_logger(
+            "main", f"{CUR_DIR}/logs/{game_date}/main.log", to_stdout=True
+        )
         self.game_date = game_date
         self.price_limit = price_limit
         self.loss_sell_th = loss_sell_th
         self.profit_sell_th = profit_sell_th
+        self.flip_rate_sell_th = flip_rate_sell_th
         self.buy_balance = buy_balance
 
         self.manager = Manager()
@@ -69,7 +75,7 @@ class NBATrader:
 
     def price_monitor(self):
         side = BUY
-        logfile = f"logs/{self.game_date}/price_monitor.log"
+        logfile = f"{CUR_DIR}/logs/{self.game_date}/price_monitor.log"
         logger = setup_logger("price_monitor", logfile)
         last_time = time.time()
         while True:
@@ -111,11 +117,15 @@ class NBATrader:
             logger.info(
                 (
                     f"{team} {token} shares: {shares}, ori_price: {ori_price}, "
-                    f"current price: {price}, flip_rate: {flip_rate}"
+                    f"current price: {price}, "
+                    f"flip_rate: {flip_rate}/{self.flip_rate_sell_th}"
                 )
             )
 
-            if ori_price - price > self.loss_sell_th:
+            if (
+                ori_price - price > self.loss_sell_th
+                and flip_rate > self.flip_rate_sell_th
+            ):
                 logger.warning(
                     f"price too low, sell {team} {token} at {price} for {shares} shares"
                 )
@@ -167,7 +177,7 @@ class NBATrader:
         away_token = self.gameid_token[game_id]["awayTeam"]["outcome_token_id"]
         match_up = f"{away_team}_{home_team}"
 
-        logfile = f"logs/{self.game_date}/{match_up}.log"
+        logfile = f"{CUR_DIR}/logs/{self.game_date}/{match_up}.log"
         logger = setup_logger(match_up, logfile)
         # TODO: deprecate this, not elegant
         bought_str = ""
@@ -278,11 +288,16 @@ class NBATrader:
             logger.info(f"error: {e} with {status_text}")
             return bought_str, fake_bought_str
 
-        flip_rate = check_flip(
+        status_code, flip_rate = check_flip(
             time_played, away_score - home_score, df=self.df, logger=logger
         )
         leading_team = away_team if away_score > home_score else home_team
         leading_token = away_token if away_score > home_score else home_token
+
+        # Only proceed with buying if status code is normal (0)
+        if status_code != 0:
+            logger.info(f"Skip buying due to status code: {status_code}")
+            return bought_str, fake_bought_str
 
         fake_bought_str = self._try_fake_buy(
             flip_rate,
@@ -544,6 +559,7 @@ if __name__ == "__main__":
         game_date=game_date,
         price_limit=price_limit,
         loss_sell_th=loss_sell_th,
+        flip_rate_sell_th=flip_rate_sell_th,
         profit_sell_th=profit_sell_th,
         buy_balance=buy_balance,
     )
