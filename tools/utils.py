@@ -190,19 +190,27 @@ def calculate_row_product(row, time_played):
 
 
 def check_flip(time_played, score_diff, df, logger: logging.Logger = default_logger):
-    # Return different codes for different invalid scenarios
+    # Return a tuple (status_code, flip_rate)
+    # status_code: 0 for normal, other codes for different invalid scenarios
+    # flip_rate: the probability of the game outcome flipping
+
+    # Initialize flip_rate to 0
+    flip_rate = 0.0
+
     if time_played <= 1800:
         # early than Q3 6:00 - Code 101
         logger.info("Game too early, before Q3 6:00 mark")
-        return 101
+        return 101, flip_rate
+
     if time_played >= 2880 - 2:
         # Too close to the end of the game - Code 102
         logger.info("Too close to the end of the game, skip")
-        return 102
+        return 102, flip_rate
+
     if int(score_diff) == 0:
         # Tie game - Code 103
         logger.info("Score is tied, skip")
-        return 0.5
+        return 103, 0.5  # 50% chance either team wins
 
     time_played = f"{time_played}"
     data_over_score_diff = df[(abs(df[time_played]) == abs(score_diff))].copy()
@@ -212,21 +220,21 @@ def check_flip(time_played, score_diff, df, logger: logging.Logger = default_log
         logger.info(
             f"Only {len(data_over_score_diff)} games, not enough to check flip rate"
         )
-        return 104
+        return 104, flip_rate
 
     # Use .loc instead of directly assigning to avoid SettingWithCopyWarning
     data_over_score_diff.loc[:, "product"] = data_over_score_diff.apply(
         lambda row: calculate_row_product(row, time_played), axis=1
     )
     fliped_games = data_over_score_diff[data_over_score_diff["product"] < 0]
-    fliped_rate = len(fliped_games) / len(data_over_score_diff)
+    flip_rate = len(fliped_games) / len(data_over_score_diff)
     logger.info(
         (
-            f"Fliped_rate: {fliped_rate:.4f}, {len(fliped_games)} / "
+            f"Fliped_rate: {flip_rate:.4f}, {len(fliped_games)} / "
             f"{len(data_over_score_diff)}"
         )
     )
-    return fliped_rate
+    return 0, flip_rate  # Status code 0 means normal
 
 
 def sell_with_market_price(

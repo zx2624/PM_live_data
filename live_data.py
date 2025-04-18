@@ -32,12 +32,12 @@ from tools.utils import (
 
 CUR_DIR = Path(__file__).parent
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-04-13"
+game_date = "2025-04-18"
 price_limit = 0.998
 loss_sell_th = 0.4
 flip_rate_sell_th = 0.3
 profit_sell_th = 0.015
-buy_balance = round(563 / 5, 2)
+buy_balance = round(484 / 4, 2)
 
 
 class NBATrader:
@@ -160,15 +160,28 @@ class NBATrader:
             logger.info(
                 f"{team} {token} fake ori_price: {ori_price}, current price: {price}"
             )
-
+            get_order = False
             if ori_price - price > self.loss_sell_th:
                 logger.warning(f"fake price too low, sell {team} {token} at {price}")
+                get_order = True
                 if token in self.fake_token_infos:
                     self.fake_token_infos.pop(token)
             if price - ori_price > 0.05:
                 logger.info(f"fake enough profit, sell {team} {token} at {price}")
+                get_order = True
                 if token in self.fake_token_infos:
                     self.fake_token_infos.pop(token)
+            if get_order:
+                cnt = 0
+                while cnt < 10:
+                    try:
+                        order_book = client.get_order_book(token, timeout=1)
+                        logger.info(f"{token} fake order_book: {order_book}")
+                        break
+                    except Exception as e:
+                        logger.error(f"get_order_book error: {e}")
+                        time.sleep(0.1)
+                    cnt += 1
 
     def buy_one_game(self, game_id: str):
         home_team = self.gameid_token[game_id]["homeTeam"]["team"]
