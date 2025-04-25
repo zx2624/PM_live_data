@@ -17,14 +17,19 @@ from tools.utils import (
 os.environ["SSL_CERT_FILE"] = certifi.where()
 
 date = "2025-02-25"
-logger = setup_logger("token_monitor", f"logs/{date}/token_monitor.log")
-game_token = get_team_token(game_date=date, tag_slug="nba")
+logger = setup_logger(
+    "token_monitor", f"logs/token_monitor/cannada-PM-election.log", to_stdout=True
+)
+# game_token = get_team_token(game_date=date, tag_slug="nba")
 token_infos = {
-    token: {"team": team, "size": 100, "price": 1.0}
-    for team, token in game_token.items()
+    "29677413448356631423250052573262008356913370083986817030510370064664558041792": {
+        "team": "cannada PM election",
+        "size": 194.22,
+        "price": 0.796,
+    }
 }
-loss_sell_th = 1.0
-profit_sell_th = 1.0
+loss_sell_th = 0.3
+profit_sell_th = 0.2
 buy_balance = 100
 
 
@@ -62,6 +67,7 @@ def _process_real_tokens(prices: Dict) -> None:
 
 def price_monitor() -> None:
     """Monitor prices and execute trades based on conditions"""
+    logger.info("start price monitor")
     side = BUY
     while True:
         if len(token_infos) == 0:
@@ -80,7 +86,7 @@ def price_monitor() -> None:
             #     )
             #     for order_book in order_books
             # }
-            prices = client.get_prices(bookparams, timeout=0.1)
+            prices = client.get_prices(bookparams, timeout=1)
             prices = {token: float(prices[token][side]) for token in prices}
             logger.info(f"get prices in {time.time() - time_now} seconds")
             _process_real_tokens(prices)
@@ -90,3 +96,4 @@ def price_monitor() -> None:
 
 if __name__ == "__main__":
     price_monitor()
+    # logger.info("start price monitor")
