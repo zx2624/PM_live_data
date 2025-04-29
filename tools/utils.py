@@ -120,6 +120,9 @@ def query_events_by_slug(slug: str) -> list:
 
 
 def get_team_token(game_date: str, tag_slug) -> dict:
+    team_mapping = {
+        "Twolves": "Timberwolves",
+    }
     gamma = Gamma()
     querystring_params = {
         "limit": 1000,
@@ -156,6 +159,8 @@ def get_team_token(game_date: str, tag_slug) -> dict:
                 .split(", ")
             )
             for outcome, clob_token_id in zip(outcomes, clobTokenIds):
+                if outcome in team_mapping:
+                    outcome = team_mapping[outcome]
                 assert (
                     outcome not in outcome_tokens
                 ), f"outcome: {outcome} already exists"

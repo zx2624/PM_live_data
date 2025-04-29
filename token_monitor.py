@@ -18,7 +18,7 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 
 date = "2025-02-25"
 logger = setup_logger(
-    "token_monitor", f"logs/token_monitor/cannada-PM-election.log", to_stdout=True
+    "token_monitor", f"logs/token_monitor/cannada-PM-election.log", to_stdout=False
 )
 # game_token = get_team_token(game_date=date, tag_slug="nba")
 token_infos = {
@@ -28,7 +28,7 @@ token_infos = {
         "price": 0.796,
     }
 }
-loss_sell_th = 0.3
+loss_sell_th = 0.4
 profit_sell_th = 0.2
 buy_balance = 100
 
