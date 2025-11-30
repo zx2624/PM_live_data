@@ -20,6 +20,13 @@ from agents.polymarket.gamma import GammaMarketClient as Gamma
 
 
 def setup_logger(name, log_file=None, to_stdout=False):
+    """
+    Setup a logger with the specified name, log file, and stdout option.
+    :param name: Name of the logger
+    :param log_file: File to log messages to. If None, logs will not be saved to a file.
+    :param to_stdout: If True, log messages will also be printed to stdout.
+    :return: Configured logger instance
+    """
     log_format = (
         "%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s"
     )
@@ -84,6 +91,9 @@ quater_map = {
 def query_events(tag_slug: str, game_date: str) -> list:
     """
     query events according to tag_slug and game_date
+    :param tag_slug: the slug of the tag, e.g. "nba-uta-por"
+    :param game_date: the date of the game, e.g. "2024-12-06"
+    :return: a list of events that match the tag_slug and game_date
     """
     if tag_slug == "":
         return []
@@ -144,6 +154,8 @@ def get_team_token(game_date: str, tag_slug) -> dict:
     for event in filtered_events:
         for market in event["markets"]:
             # "outcomes": "[\"Magic\", \"76ers\"]",
+            if market["sportsMarketType"] != "moneyline":
+                continue
             outcomes = (
                 market["outcomes"]
                 .replace("[", "")
@@ -202,9 +214,9 @@ def check_flip(time_played, score_diff, df, logger: logging.Logger = default_log
     # Initialize flip_rate to 0
     flip_rate = 0.0
 
-    if time_played <= 1800:
-        # early than Q3 6:00 - Code 101
-        logger.info("Game too early, before Q3 6:00 mark")
+    if time_played <= 2880 - 360:
+        # early than Q4 10:00 - Code 101
+        logger.info("Game too early, before Q4 10:00 mark")
         return 101, flip_rate
 
     if time_played >= 2880 - 2:

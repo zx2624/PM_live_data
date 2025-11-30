@@ -18,18 +18,18 @@ os.environ["SSL_CERT_FILE"] = certifi.where()
 
 date = "2025-02-25"
 logger = setup_logger(
-    "token_monitor", f"logs/token_monitor/cannada-PM-election.log", to_stdout=False
+    "token_monitor", f"logs/token_monitor/will-andrej-babi-be-the-next-prime-minister-of-the-czech-republic-after-the-elections.log", to_stdout=False
 )
 # game_token = get_team_token(game_date=date, tag_slug="nba")
 token_infos = {
-    "29677413448356631423250052573262008356913370083986817030510370064664558041792": {
-        "team": "cannada PM election",
-        "size": 194.22,
-        "price": 0.796,
+    "65004554194927757326052747038320033237842326788371796032376993547165778315045": {
+        "team": "will-andrej-babi-be-the-next-prime-minister-of-the-czech-republic-after-the-elections",
+        "size": 22.5,
+        "price": 0.89,
     }
 }
-loss_sell_th = 0.4
-profit_sell_th = 0.2
+loss_sell_th = 0.20
+profit_sell_th = 0.10
 buy_balance = 100
 
 

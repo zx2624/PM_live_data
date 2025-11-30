@@ -32,12 +32,13 @@ from tools.utils import (
 
 CUR_DIR = Path(__file__).parent
 os.environ["SSL_CERT_FILE"] = certifi.where()
-game_date = "2025-04-18"
-price_limit = 0.998
+# testing testing
+game_date = "2025-11-29"
+price_limit = 0.999
 loss_sell_th = 0.4
 flip_rate_sell_th = 0.3
 profit_sell_th = 0.015
-buy_balance = round(484 / 4, 2)
+buy_balance = round(14.5, 2)
 
 
 class NBATrader:
@@ -459,7 +460,7 @@ class NBATrader:
         """
         尝试进行实际购买操作
         """
-        if flip_rate < 0.005 and bought_str == "":
+        if flip_rate < 0.002 and bought_str == "":
             try:
                 bought, price_pair, size = buy_in(
                     tokens=[leading_token],
