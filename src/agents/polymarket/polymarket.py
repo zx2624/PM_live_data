@@ -6,6 +6,8 @@ import pdb
 import time
 import ast
 import requests
+import logging
+from typing import List
 
 from dotenv import load_dotenv
 
@@ -16,6 +18,7 @@ from web3.constants import MAX_INT
 import httpx
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds
+from py_clob_client.exceptions import PolyApiException
 from py_clob_client.constants import AMOY, POLYGON
 from py_order_utils.builders import OrderBuilder
 from py_order_utils.model import OrderData
@@ -26,7 +29,7 @@ from py_clob_client.clob_types import (
     OrderType,
     OrderBookSummary,
 )
-from py_clob_client.order_builder.constants import BUY
+from py_clob_client.order_builder.constants import BUY, SELL
 
 from agents.utils.objects import SimpleMarket, SimpleEvent
 
@@ -357,6 +360,181 @@ class Polymarket:
             self.get_address_for_private_key()
         ).call()
         return float(balance_res / 10e5)
+
+    def sell_with_market_price(self, token: str, size: float, logger=None):
+        """Sell token with market price"""
+        if logger is None:
+            logger = logging.getLogger(__name__)
+
+        while True:
+            logger.info(f"selling {token} with {size} shares")
+            try:
+                order = self.client.create_market_order(
+                    MarketOrderArgs(
+                        token_id=token,
+                        amount=size,
+                        side=SELL,
+                    )
+                )
+                resp = self.client.post_order(order, orderType=OrderType.FOK)
+                logger.info(f"sell {token} resp: {resp}")
+                return resp
+            except PolyApiException as e:
+                if "not enough balance" in str(e):
+                    logger.warning(f"sold out, with {e}")
+                    break
+                elif "No orderbook exists" in str(e):
+                    logger.warning(f"No orderbook exists, with {e}")
+                    break
+            except Exception as e:
+                logger.error(f"sell {token} error: {e}")
+                time.sleep(0.05)
+
+    def sell_with_limit_price(self, token: str, sell_price: float, size: float, logger=None):
+        """Sell token with limit price"""
+        if logger is None:
+            logger = logging.getLogger(__name__)
+
+        while True:
+            try:
+                expiration_stamp = int(time.time()) + 20 + 60
+                order = self.client.create_order(
+                    OrderArgs(
+                        price=sell_price,
+                        size=size,
+                        side=SELL,
+                        token_id=token,
+                        expiration=expiration_stamp,
+                    )
+                )
+                res = self.client.post_order(order, orderType=OrderType.GTD)
+                logger.info(f"{token} post_order res: {res}")
+                time.sleep(10)
+            except PolyApiException as e:
+                if "not enough balance" in str(e):
+                    logger.error("not enough balance, pretend I sold it")
+                    return True, 0
+                else:
+                    logger.error(f"sell {token} error: {e}")
+                    raise e
+            orderid = res["orderID"]
+            order_res = None
+            while True:
+                try:
+                    order_res = self.client.get_order(orderid)
+                except Exception:
+                    continue
+                if order_res and order_res["status"] != "LIVE":
+                    break
+                logger.info(f"{token} order still open with {order_res}")
+                time.sleep(0.5)
+            logger.info(f"{token} order_res: {order_res}")
+            size = float(order_res["size_matched"])
+            return True, size
+
+    def buy(self, token: str, buy_price: float, size: float, logger=None):
+        """Buy token with limit price"""
+        if logger is None:
+            logger = logging.getLogger(__name__)
+
+        try:
+            expiration_stamp = int(time.time()) + 20 + 60
+            order = self.client.create_order(
+                OrderArgs(
+                    price=buy_price,
+                    size=size,
+                    side=BUY,
+                    token_id=token,
+                    expiration=expiration_stamp,
+                )
+            )
+            res = self.client.post_order(order, orderType=OrderType.GTD)
+            logger.info(f"{token} post_order res: {res}")
+            # sleep 10 s
+            time.sleep(10)
+        except PolyApiException as e:
+            if "not enough balance" in str(e):
+                logger.error("not enough balance, pretend I bought it")
+                return True, size
+            else:
+                logger.error(f"buy {token} error: {e}")
+                raise e
+
+        # check order fill size
+        orderid = res["orderID"]
+        order_res = None
+        while True:
+            try:
+                order_res = self.client.get_order(orderid)
+            except Exception as e:
+                logger.error(f"get_order error: {e}")
+                continue
+            if order_res and order_res["status"] != "LIVE":
+                break
+            logger.info(f"{token} order still open with {order_res}")
+            time.sleep(0.5)
+        logger.info(f"{token} order_res: {order_res}")
+        size = float(order_res["size_matched"])
+        return True, size
+
+    def calculate_buy_market_price(self, order_book: OrderBookSummary, amount_to_match: float, logger=None) -> float:
+        """Calculate buy market price based on order book"""
+        if logger is None:
+            logger = logging.getLogger(__name__)
+
+        sum = 0.0
+        positions = order_book.asks
+        for p in reversed(positions):
+            sum += float(p.size) * float(p.price)
+            if sum >= amount_to_match:
+                return float(p.price)
+        # logger.error(f"not enough liquidity to match {amount_to_match}, only {sum}")
+        return 1.0
+
+    def buy_in(self, tokens, buy_price=None, price_threshold=0.9, price_limit=1.0, spread_th=None, buy_balance=0.0, logger=None):
+        """Buy in tokens with market or specified price"""
+        if logger is None:
+            logger = logging.getLogger(__name__)
+
+        import logging as log_module
+        price_pair: List[float] = []
+        for token in tokens:
+            time_now = time.time()
+            while True:
+                try:
+                    order_book = self.client.get_order_book(token)
+                    break
+                except Exception as e:
+                    logger.error(f"get_order_book error: {e}")
+                    time.sleep(0.1)
+            if not buy_price:
+                buy_price = self.calculate_buy_market_price(order_book, buy_balance, logger)
+            logger.info(f"buy_price: {buy_price}, cost time: {time.time() - time_now}")
+            price_pair.append(buy_price)
+            if (
+                buy_price >= price_threshold
+                and buy_price < 1.0
+                and buy_price <= price_limit
+            ):
+                if spread_th:
+                    spread = float(self.client.get_spread(token)["spread"])
+                    if spread > spread_th:
+                        logger.info(f"spread is {spread}, skip")
+                        return False, price_pair, 0
+                size = round(buy_balance / buy_price, 2)
+                logger.info(f"Im buying {token} at {buy_price} for {size} shares")
+                logger.info(f"order_book: {order_book}")
+                bought, size = self.buy(
+                    token=token, buy_price=buy_price, size=size, logger=logger
+                )
+
+                # return res
+
+                time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                with open("assets/buy_in.log", "a") as f:
+                    f.write(f"{token} {buy_price} {size} @{time_str}\n")
+                return bought and size > 0, price_pair, size
+        return False, price_pair, 0
 
 
 def test():

@@ -16,13 +16,10 @@ from py_clob_client.order_builder.constants import BUY, SELL
 from PyQt6.QtWidgets import QApplication
 
 from tools.qt_printer import ThreadDisplayWindow
+from src.agents.polymarket.polymarket import Polymarket
 from tools.utils import (
-    buy,
-    calculate_buy_market_price,
-    client,
     query_events,
     query_events_by_slug,
-    sell_with_market_price,
     setup_logger,
 )
 
@@ -53,6 +50,9 @@ class TradingSystem:
     ):
         # Initialize SSL certificate
         os.environ["SSL_CERT_FILE"] = certifi.where()
+
+        # Initialize Polymarket client
+        self.polymarket = Polymarket()
 
         # Trading parameters
         self.tag_slug = tag_slug
@@ -124,14 +124,14 @@ class TradingSystem:
                 self.logger.warning(
                     f"price too low, sell {team} {token} at {price} for {shares} shares"
                 )
-                sell_with_market_price(token=token, size=shares, logger=self.logger)
+                self.polymarket.sell_with_market_price(token=token, size=shares, logger=self.logger)
                 if token in self.token_infos:
                     self.token_infos.pop(token)
             elif price - ori_price > self.profit_sell_th:
                 self.logger.info(
                     f"enough profit, sell {team} {token} at {price} for {shares} shares"
                 )
-                sell_with_market_price(token=token, size=shares, logger=self.logger)
+                self.polymarket.sell_with_market_price(token=token, size=shares, logger=self.logger)
                 if token in self.token_infos:
                     self.token_infos.pop(token)
 
@@ -164,9 +164,9 @@ class TradingSystem:
             slug_spread = {}
 
             try:
-                order_books = client.get_order_books(bookparams)
+                order_books = self.polymarket.client.get_order_books(bookparams)
                 prices = {
-                    order_book.asset_id: calculate_buy_market_price(
+                    order_book.asset_id: self.polymarket.calculate_buy_market_price(
                         order_book, self.buy_balance, logger=self.logger
                     )
                     for order_book in order_books
@@ -254,7 +254,7 @@ class TradingSystem:
             bought_str = f"bought {slug} {token} at {price:.6} for {size:.6} shares"
 
             try:
-                bought, bought_size = buy(
+                bought, bought_size = self.polymarket.buy(
                     token=token, buy_price=price, size=size, logger=self.logger
                 )
                 if bought and bought_size > 0:

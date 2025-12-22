@@ -16,17 +16,13 @@ from py_clob_client.order_builder.constants import BUY, SELL
 from PyQt6.QtWidgets import QApplication
 from requests.exceptions import ReadTimeout
 
-from nba_api.live.nba.endpoints import boxscore
-from nba_api.stats.endpoints import ScoreboardV2
-from nba_api.stats.static import teams
+from nba_api.live.nba.endpoints import boxscore, scoreboard
+from src.agents.polymarket.polymarket import Polymarket
 from tools.qt_printer import ThreadDisplayWindow
 from tools.utils import (
-    buy_in,
     check_flip,
-    client,
     get_team_token,
     get_time_played,
-    sell_with_market_price,
     setup_logger,
 )
 
@@ -38,7 +34,7 @@ price_limit = 0.999
 loss_sell_th = 0.4
 flip_rate_sell_th = 0.3
 profit_sell_th = 0.015
-buy_balance = round(14.5, 2)
+buy_balance = round(5, 2)
 
 
 class NBATrader:
@@ -60,6 +56,7 @@ class NBATrader:
         self.profit_sell_th = profit_sell_th
         self.flip_rate_sell_th = flip_rate_sell_th
         self.buy_balance = buy_balance
+        self.polymarket = Polymarket()
 
         self.manager = Manager()
         self.token_infos = self.manager.dict()
@@ -93,7 +90,7 @@ class NBATrader:
                 + list(self.fake_token_infos.keys())
             ]
             try:
-                prices = client.get_prices(bookparams, timeout=1)
+                prices = self.polymarket.client.get_prices(bookparams)
             except Exception as e:
                 logger.error(f"error when get prices: {e}")
                 continue
@@ -130,7 +127,7 @@ class NBATrader:
                 logger.warning(
                     f"price too low, sell {team} {token} at {price} for {shares} shares"
                 )
-                sell_with_market_price(token=token, size=shares, logger=logger)
+                self.polymarket.sell_with_market_price(token=token, size=shares, logger=logger)
                 if token in self.token_infos:
                     self.token_infos.pop(token)
             elif price - ori_price > self.profit_sell_th:
@@ -139,7 +136,7 @@ class NBATrader:
                 )
                 # TODO: don't use market price, use limit price
                 # sell_with_market_price(token=token, size=shares, logger=logger)
-                res = client.create_and_post_order(
+                res = self.polymarket.client.create_and_post_order(
                     OrderArgs(token_id=token, side=SELL, price=price, size=shares)
                 )
                 logger.info(
@@ -176,7 +173,7 @@ class NBATrader:
                 cnt = 0
                 while cnt < 10:
                     try:
-                        order_book = client.get_order_book(token, timeout=1)
+                        order_book = self.polymarket.client.get_order_book(token)
                         logger.info(f"{token} fake order_book: {order_book}")
                         break
                     except Exception as e:
@@ -307,7 +304,9 @@ class NBATrader:
         )
         leading_team = away_team if away_score > home_score else home_team
         leading_token = away_token if away_score > home_score else home_token
-
+        if bought_str != "" and leading_token in self.token_infos:
+            # 更新购买状态
+            self.token_infos[leading_token]["flip_rate"] = flip_rate
         # Only proceed with buying if status code is normal (0)
         if status_code != 0:
             logger.info(f"Skip buying due to status code: {status_code}")
@@ -342,12 +341,12 @@ class NBATrader:
         Perform a test buy to verify network functionality.
         """
         for team, token in team_token.items():
-            price = float(client.get_price(token, SELL)["price"])
+            price = float(self.polymarket.client.get_price(token, SELL)["price"])
             if price > 0.1:
                 self.logger.info(
                     f"Performing test buy for {team} with token {token} at price 0.01"
                 )
-                bought, price_pair, size = buy_in(
+                bought, price_pair, size = self.polymarket.buy_in(
                     tokens=[token],
                     buy_price=0.01,
                     price_threshold=0.0,  # Set to 0 to bypass threshold check
@@ -369,17 +368,26 @@ class NBATrader:
                 break
 
     def setup_games(self):
-        team_token = get_team_token(self.game_date, "nba")
-        # Perform a test buy after obtaining team tokens
-        self._test_buy(team_token)
+        # First get the live scoreboard data to determine the actual game date
+        board = scoreboard.ScoreBoard()
 
-        board = ScoreboardV2(game_date=self.game_date)
+        games_data = board.get_dict()
+        if "scoreboard" in games_data and "games" in games_data["scoreboard"]:
+            # Extract the actual game date from the API response
+            actual_game_date = games_data["scoreboard"].get("gameDate", "")
+            if actual_game_date:
+                self.logger.info(f"Auto-detected game date: {actual_game_date}")
+                self.game_date = actual_game_date
+            else:
+                self.logger.warning("No gameDate found in API response, using provided date")
 
-        for data_set in board.data_sets:
-            df = data_set.get_data_frame()
-            if "GAME_ID" in df.columns and "HOME_TEAM_ID" in df.columns:
-                self._process_game_data(df, team_token)
-                break
+            games_list = games_data["scoreboard"]["games"]
+            team_token = get_team_token(self.game_date, "nba")
+
+            # Perform a test buy after obtaining team tokens
+            # self._test_buy(team_token)
+
+            self._process_games_list(games_list, team_token)
 
         self.logger.info(self.gameid_token)
         self._save_game_data()
@@ -424,8 +432,8 @@ class NBATrader:
         """
         if flip_rate < 0.02 and fake_bought_str == "":
             try:
-                price = float(client.get_price(leading_token, SELL)["price"])
-                order_book = client.get_order_book(leading_token)
+                price = float(self.polymarket.client.get_price(leading_token, SELL)["price"])
+                order_book = self.polymarket.client.get_order_book(leading_token)
                 logger.info(f"order book: {order_book}")
                 fake_bought_str = " ".join(
                     [
@@ -462,7 +470,7 @@ class NBATrader:
         """
         if flip_rate < 0.002 and bought_str == "":
             try:
-                bought, price_pair, size = buy_in(
+                bought, price_pair, size = self.polymarket.buy_in(
                     tokens=[leading_token],
                     price_threshold=0.7,
                     price_limit=self.price_limit,
@@ -488,25 +496,21 @@ class NBATrader:
                     self.token_infos[leading_token]["flip_rate"] = flip_rate
             except Exception as e:
                 logger.info(f"buying {leading_team} fail: {e}")
-        if bought_str != "" and leading_token in self.token_infos:
-            # 更新购买状态
-            self.token_infos[leading_token]["flip_rate"] = flip_rate
         return bought_str
 
-    def _process_game_data(self, df, team_token):
-        df = df[["GAME_ID", "HOME_TEAM_ID", "VISITOR_TEAM_ID"]]
-        game_ids = df["GAME_ID"].values
+    def _process_games_list(self, games_list, team_token):
+        for game in games_list:
+            game_id = game["gameId"]
+            home_team = game["homeTeam"]["teamName"]
+            away_team = game["awayTeam"]["teamName"]
 
-        for game_id in game_ids:
-            home_team_id = df[df["GAME_ID"] == game_id]["HOME_TEAM_ID"].iloc[0]
-            home_team = teams.find_team_name_by_id(home_team_id)["nickname"]
-
+            # Check if both teams are in team_token
             if home_team not in team_token:
                 self.logger.info(f"{home_team} not in outcome_token_id")
                 continue
-
-            visitor_team_id = df[df["GAME_ID"] == game_id]["VISITOR_TEAM_ID"].iloc[0]
-            visitor_team = teams.find_team_name_by_id(visitor_team_id)["nickname"]
+            if away_team not in team_token:
+                self.logger.info(f"{away_team} not in outcome_token_id")
+                continue
 
             self.gameid_token[game_id] = {
                 "homeTeam": {
@@ -514,8 +518,8 @@ class NBATrader:
                     "outcome_token_id": team_token[home_team],
                 },
                 "awayTeam": {
-                    "team": visitor_team,
-                    "outcome_token_id": team_token[visitor_team],
+                    "team": away_team,
+                    "outcome_token_id": team_token[away_team],
                 },
             }
 
