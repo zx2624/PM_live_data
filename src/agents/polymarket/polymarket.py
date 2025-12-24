@@ -74,8 +74,12 @@ class Polymarket:
         self._init_approvals(False)
 
     def _init_api_keys(self) -> None:
+        # signature_type: 0=EOA, 1=POLY_PROXY, 2=POLY_GNOSIS_SAFE
+        # 使用 POLY_PROXY 签名类型 (1) 配合 funder 地址
+        funder = os.getenv("FUNDER")
         self.client = ClobClient(
-            self.clob_url, key=self.private_key, chain_id=self.chain_id, signature_type=1
+            self.clob_url, key=self.private_key, chain_id=self.chain_id, 
+            signature_type=1, funder=funder
         )
         self.credentials = self.client.create_or_derive_api_creds()
         self.client.set_api_creds(self.credentials)
@@ -356,10 +360,19 @@ class Polymarket:
         return resp
 
     def get_usdc_balance(self) -> float:
+        """获取链上 USDC 余额"""
         balance_res = self.usdc.functions.balanceOf(
             self.get_address_for_private_key()
         ).call()
         return float(balance_res / 10e5)
+
+    def get_trading_balance(self) -> float:
+        """获取 Polymarket 交易账户余额（通过 API）"""
+        from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+        balance = self.client.get_balance_allowance(
+            params=BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+        )["balance"]
+        return float(balance) / 1e6
 
     def sell_with_market_price(self, token: str, size: float, logger=None):
         """Sell token with market price"""
