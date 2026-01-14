@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import sys
 import threading
@@ -34,7 +35,7 @@ price_limit = 0.999
 loss_sell_th = 0.4
 flip_rate_sell_th = 0.3
 profit_sell_th = 0.015
-buy_balance = round(5, 2)
+buy_balance = round(14.5, 2)
 
 
 class NBATrader:
@@ -542,6 +543,17 @@ class NBATrader:
 
     def start_trading(self):
         """Start the trading system"""
+        # 查询账户余额并计算buy_balance
+        balance = self.polymarket.get_trading_balance()
+        self.logger.info(f"查询到账户余额: {balance} USDC")
+        # 向下取整后平均分成4份
+        balance_floor = math.floor(balance)
+        self.buy_balance = round(balance_floor / 4, 2)
+        self.logger.info(
+            f"余额向下取整: {balance_floor} USDC, "
+            f"平均分成4份后 buy_balance: {self.buy_balance} USDC"
+        )
+        
         # Start Qt application
         if ThreadDisplayWindow is not None:
             app = QApplication(sys.argv)
