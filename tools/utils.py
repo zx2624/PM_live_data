@@ -183,9 +183,34 @@ def check_flip(time_played, score_diff, df, logger: logging.Logger = default_log
     # status_code: 0 for normal, other codes for different invalid scenarios
     # flip_rate: the probability of the game outcome flipping
 
-    # Initialize flip_rate to 0
-    flip_rate = 0.0
+    # Check tie game first - Code 103
+    if int(score_diff) == 0:
+        logger.info("Score is tied, skip")
+        return 103, 0.5  # 50% chance either team wins
 
+    # Calculate flip_rate first, before other checks
+    time_played_str = f"{time_played}"
+    data_over_score_diff = df[(abs(df[time_played_str]) == abs(score_diff))].copy()
+
+    # Calculate flip_rate if we have data
+    if len(data_over_score_diff) > 0:
+        # Use .loc instead of directly assigning to avoid SettingWithCopyWarning
+        data_over_score_diff.loc[:, "product"] = data_over_score_diff.apply(
+            lambda row: calculate_row_product(row, time_played_str), axis=1
+        )
+        fliped_games = data_over_score_diff[data_over_score_diff["product"] < 0]
+        flip_rate = len(fliped_games) / len(data_over_score_diff)
+        logger.info(
+            (
+                f"Fliped_rate: {flip_rate:.4f}, {len(fliped_games)} / "
+                f"{len(data_over_score_diff)}"
+            )
+        )
+    else:
+        flip_rate = 0.0
+        logger.info("No matching data found for flip rate calculation")
+
+    # Now perform other checks, but return calculated flip_rate
     if time_played <= 2880 - 360:
         # early than Q4 10:00 - Code 101
         logger.info("Game too early, before Q4 10:00 mark")
@@ -196,14 +221,6 @@ def check_flip(time_played, score_diff, df, logger: logging.Logger = default_log
         logger.info("Too close to the end of the game, skip")
         return 102, flip_rate
 
-    if int(score_diff) == 0:
-        # Tie game - Code 103
-        logger.info("Score is tied, skip")
-        return 103, 0.5  # 50% chance either team wins
-
-    time_played = f"{time_played}"
-    data_over_score_diff = df[(abs(df[time_played]) == abs(score_diff))].copy()
-
     # Not enough games for statistical significance - Code 104
     if len(data_over_score_diff) < 300:
         logger.info(
@@ -211,18 +228,6 @@ def check_flip(time_played, score_diff, df, logger: logging.Logger = default_log
         )
         return 104, flip_rate
 
-    # Use .loc instead of directly assigning to avoid SettingWithCopyWarning
-    data_over_score_diff.loc[:, "product"] = data_over_score_diff.apply(
-        lambda row: calculate_row_product(row, time_played), axis=1
-    )
-    fliped_games = data_over_score_diff[data_over_score_diff["product"] < 0]
-    flip_rate = len(fliped_games) / len(data_over_score_diff)
-    logger.info(
-        (
-            f"Fliped_rate: {flip_rate:.4f}, {len(fliped_games)} / "
-            f"{len(data_over_score_diff)}"
-        )
-    )
     return 0, flip_rate  # Status code 0 means normal
 
 
