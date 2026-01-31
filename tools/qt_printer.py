@@ -19,15 +19,22 @@ logger = logging.getLogger(__name__)
 class ThreadPrinter(QObject):
     """用于线程打印的信号发射器"""
 
-    print_signal = pyqtSignal(str, str)  # 参数：名称，打印内容
+    print_signal = pyqtSignal(str, str, float, float)  # 参数：名称，打印内容，购买价格，当前价格
 
     def __init__(self):
         super().__init__()
         self._lock = threading.Lock()
 
-    def print(self, name: str, message: str):
-        """打印消息到指定名称的显示框"""
-        self.print_signal.emit(name, message)
+    def print(self, name: str, message: str, buy_price: float = -1, current_price: float = -1):
+        """打印消息到指定名称的显示框
+        
+        Args:
+            name: 显示框名称
+            message: 显示内容
+            buy_price: 购买价格，-1表示未购买
+            current_price: 当前价格，-1表示未获取价格
+        """
+        self.print_signal.emit(name, message, buy_price, current_price)
 
 
 class ThreadDisplayWindow(QMainWindow):
@@ -113,15 +120,64 @@ class ThreadDisplayWindow(QMainWindow):
 
         return widget
 
-    def _handle_print(self, name: str, message: str):
+    def _handle_print(self, name: str, message: str, buy_price: float, current_price: float):
         """处理打印请求"""
         if name in self.message_labels:
             label = self.message_labels[name]
             label.setText(message)  # 直接替换为最新消息
+            
+            # 根据价格设置背景颜色
+            color = self._get_color_by_price(buy_price, current_price)
+            label.setStyleSheet(
+                f"""
+                QLabel {{
+                    background-color: {color};
+                    border: 1px solid #ccc;
+                    border-radius: 4px;
+                    padding: 8px;
+                    min-height: 50px;
+                }}
+                """
+            )
+    
+    def _get_color_by_price(self, buy_price: float, current_price: float) -> str:
+        """根据购买价格和当前价格返回对应的颜色
+        
+        Args:
+            buy_price: 购买价格，-1表示未购买
+            current_price: 当前价格，-1表示未获取价格
+            
+        Returns:
+            颜色代码字符串
+        """
+        # 未购买
+        if buy_price < 0:
+            return "white"
+        
+        # 已购买但未获取当前价格
+        if current_price < 0:
+            return "white"
+        
+        # 计算盈利情况
+        diff = current_price - buy_price
+        
+        if abs(diff) < 0.001:  # 持平（考虑浮点数精度）
+            return "#E6B3FF"  # 紫色
+        elif diff > 0:  # 盈利
+            return "#90EE90"  # 绿色
+        else:  # 损失
+            return "#FFB3B3"  # 红色
 
-    def print(self, name: str, message: str):
-        """供外部调用的打印方法"""
-        self.printer.print(name, message)
+    def print(self, name: str, message: str, buy_price: float = -1, current_price: float = -1):
+        """供外部调用的打印方法
+        
+        Args:
+            name: 显示框名称
+            message: 显示内容
+            buy_price: 购买价格，-1表示未购买
+            current_price: 当前价格，-1表示未获取价格
+        """
+        self.printer.print(name, message, buy_price, current_price)
 
 
 # 使用示例

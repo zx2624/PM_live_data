@@ -113,6 +113,9 @@ class NBATrader:
                 continue
 
             price = float(prices[token][side])
+            # 更新当前价格到token_infos中
+            self.token_infos[token]["current_price"] = price
+            
             logger.info(
                 (
                     f"{team} {token} shares: {shares}, ori_price: {ori_price}, "
@@ -156,6 +159,9 @@ class NBATrader:
                 continue
 
             price = float(prices[token][side])
+            # 更新当前价格到fake_token_infos中
+            self.fake_token_infos[token]["current_price"] = price
+            
             logger.info(
                 f"{team} {token} fake ori_price: {ori_price}, current price: {price}"
             )
@@ -207,7 +213,10 @@ class NBATrader:
                 logger.info(f"{away_team} vs. {home_team} {status_text}, sleeping")
                 if self.qt_window:
                     self.qt_window.print(
-                        match_up, f"{away_team} vs. {home_team} {status_text}, sleeping"
+                        match_up, 
+                        f"{away_team} vs. {home_team} {status_text}, sleeping",
+                        -1,  # 未购买
+                        -1   # 无当前价格
                     )
                 time.sleep(60)
                 continue
@@ -237,6 +246,8 @@ class NBATrader:
                             f"{away_team}:{away_score} - {home_team}:{home_score} "
                             f"finished. {bought_str}"
                         ),
+                        -1,  # 比赛结束，已卖出或未购买
+                        -1   # 无当前价格
                     )
                 break
 
@@ -262,6 +273,8 @@ class NBATrader:
                 self.qt_window.print(
                     f"{away_team}_{home_team}",
                     f"game {away_team} VS {home_team} not started, sleep for 5 minutes",
+                    -1,  # 未购买
+                    -1   # 无当前价格
                 )
             logger.info(f"query {away_team}-{home_team} time: {time.time() - time_now}")
             time.sleep(300)
@@ -311,6 +324,7 @@ class NBATrader:
         # Only proceed with buying if status code is normal (0)
         if status_code != 0:
             logger.info(f"Skip buying due to status code: {status_code}")
+            self.qt_window.print(match_up, f"{away_team} {away_score} - {home_team} {home_score} ", -1, -1)
             return bought_str, fake_bought_str
 
         fake_bought_str = self._try_fake_buy(
@@ -332,8 +346,17 @@ class NBATrader:
             f"{away_team} {away_score} - {home_team} {home_score} "
             f"status: {status_text} flip rate: {flip_rate} {bought_str}"
         )
+        
+        # 从token_infos获取价格信息用于颜色显示
+        buy_price = -1
+        current_price = -1
+        if leading_token in self.token_infos:
+            buy_price = self.token_infos[leading_token]["price"]
+            # 从token_infos中获取price_monitor更新的当前价格
+            current_price = self.token_infos[leading_token].get("current_price", -1)
+        
         if self.qt_window:
-            self.qt_window.print(match_up, info_str)
+            self.qt_window.print(match_up, info_str, buy_price, current_price)
         logger.info(info_str)
         return bought_str, fake_bought_str
 
@@ -451,6 +474,7 @@ class NBATrader:
                 self.fake_token_infos[leading_token]["size"] = 0
                 self.fake_token_infos[leading_token]["team"] = leading_team
                 self.fake_token_infos[leading_token]["flip_rate"] = flip_rate
+                self.fake_token_infos[leading_token]["current_price"] = -1  # 初始化当前价格
             except Exception:
                 logger.info("error when get order book or price")
         if fake_bought_str != "" and leading_token in self.fake_token_infos:
@@ -495,6 +519,7 @@ class NBATrader:
                     self.token_infos[leading_token]["price"] = price_pair[0]
                     self.token_infos[leading_token]["team"] = leading_team
                     self.token_infos[leading_token]["flip_rate"] = flip_rate
+                    self.token_infos[leading_token]["current_price"] = -1  # 初始化当前价格
             except Exception as e:
                 logger.info(f"buying {leading_team} fail: {e}")
         return bought_str
