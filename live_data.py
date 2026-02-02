@@ -235,7 +235,7 @@ class NBATrader:
                 )
 
             if game_info["gameStatus"] == 3:
-                self._handle_game_end(
+                buy_price, current_price = self._handle_game_end(
                     away_team, home_team, away_token, home_token, logger
                 )
                 logger.info(f"{game_id}: {away_team} vs. {home_team} finished")
@@ -246,8 +246,8 @@ class NBATrader:
                             f"{away_team}:{away_score} - {home_team}:{home_score} "
                             f"finished. {bought_str}"
                         ),
-                        -1,  # 比赛结束，已卖出或未购买
-                        -1   # 无当前价格
+                        buy_price=buy_price,
+                        current_price=current_price,
                     )
                 break
 
@@ -432,13 +432,18 @@ class NBATrader:
         time.sleep(60 * 3)
 
         # 清理可能存在的token信息
+        buy_price = -1
+        current_price = -1
         for token in [away_token, home_token]:
             if token in self.token_infos:
+                buy_price = self.token_infos[token]["price"]
+                current_price = self.token_infos[token]["current_price"]
                 self.token_infos.pop(token)
             if token in self.fake_token_infos:
                 self.fake_token_infos.pop(token)
 
         logger.info(f"{away_team} vs. {home_team} token poped")
+        return buy_price, current_price
 
     def _try_fake_buy(
         self,
