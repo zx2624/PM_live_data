@@ -324,7 +324,7 @@ class NBATrader:
         # Only proceed with buying if status code is normal (0)
         if status_code != 0:
             logger.info(f"Skip buying due to status code: {status_code}")
-            self.qt_window.print(match_up, f"{away_team} {away_score} - {home_team} {home_score} ", -1, -1)
+            self.qt_window.print(match_up, f"{away_team} {away_score} - {home_team} {home_score} {status_text}", -1, -1)
             return bought_str, fake_bought_str
 
         fake_bought_str = self._try_fake_buy(
