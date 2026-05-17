@@ -66,7 +66,7 @@ pandas = [
     {version = ">=2.2.0", python = ">=3.12"},
     {version = "<2.2.0", python = "<3.12"} 
 ]
-isort = "^7.0.0"
+isort = "^8.0.1"
 pylint = "^4.0.2"
 
 [tool.pytest.ini_options]
